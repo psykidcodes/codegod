@@ -348,6 +348,21 @@ export class TelemetryDatabase {
   }
 
   /**
+   * Updates a user's password hash and salt by their identifier.
+   * 
+   * @param {string} identifier 
+   * @param {string} newPasswordHash 
+   * @param {string} newSalt 
+   * @returns {boolean}
+   */
+  updateUserPassword(identifier, newPasswordHash, newSalt) {
+    if (!identifier || !newPasswordHash || !newSalt) return false;
+    const stmt = this.db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE identifier = ?');
+    const result = stmt.run(newPasswordHash, newSalt, identifier);
+    return result.changes > 0;
+  }
+
+  /**
    * Dynamically registers or provisions a new tenant partition.
    * 
    * @param {object} tenant 

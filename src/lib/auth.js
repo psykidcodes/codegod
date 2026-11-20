@@ -208,6 +208,55 @@ export function verifySessionToken(token) {
   }
 }
 
+// In-memory Authenticator OTP store: identifier -> { code, expiresAt }
+export const resetCodeStore = new Map();
+
+/**
+ * Generates a cryptographically random 6-digit Authenticator Code.
+ * 
+ * @returns {string} 6-digit code
+ */
+export function generateResetCode() {
+  const num = Math.floor(100000 + Math.random() * 900000);
+  return String(num);
+}
+
+/**
+ * Stores an authenticator reset code for an identifier with 10-minute expiry.
+ * 
+ * @param {string} identifier 
+ * @param {string} code 
+ * @param {number} [ttlMs=600000] 10 minutes default
+ */
+export function storeResetCode(identifier, code, ttlMs = 10 * 60 * 1000) {
+  resetCodeStore.set(identifier, {
+    code,
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
+/**
+ * Verifies an authenticator reset code against stored value and expiration.
+ * 
+ * @param {string} identifier 
+ * @param {string} code 
+ * @returns {boolean}
+ */
+export function verifyResetCode(identifier, code) {
+  if (!identifier || !code) return false;
+  const record = resetCodeStore.get(identifier);
+  if (!record) return false;
+  if (Date.now() > record.expiresAt) {
+    resetCodeStore.delete(identifier);
+    return false;
+  }
+  const isMatch = record.code.trim() === String(code).trim();
+  if (isMatch) {
+    resetCodeStore.delete(identifier);
+  }
+  return isMatch;
+}
+
 export default {
   hashPassword,
   verifyPassword,
@@ -217,4 +266,7 @@ export default {
   maskCredential,
   createSessionToken,
   verifySessionToken,
+  generateResetCode,
+  storeResetCode,
+  verifyResetCode,
 };

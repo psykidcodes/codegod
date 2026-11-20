@@ -207,3 +207,91 @@ test('7. Auth Route Integration: Mobile Number Sign Up & Sign In with password i
   assert.strictEqual(signinData.user.maskedIdentifier, '+1 ***-***-6543');
 });
 
+test('8. Auth Route Integration: Forgot Password Authenticator OTP flow and password reset', async () => {
+  const identifier = 'reset-test@acme.com';
+  const initialPassword = 'InitialPass123!';
+  const newPassword = 'BrandNewSecurePass999!';
+  const tenantId = `tenant-reset-${Date.now()}`;
+
+  // 1. Create user account
+  const signupReq = new Request('http://localhost:3000/api/auth?action=signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      identifier,
+      password: initialPassword,
+      tenantId,
+      tenantName: 'Reset Testing Ltd',
+    }),
+  });
+  await authPost(signupReq);
+
+  // 2. Request Forgot Password Authenticator Code
+  const forgotReq = new Request('http://localhost:3000/api/auth?action=forgot_request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier }),
+  });
+  const forgotRes = await authPost(forgotReq);
+  assert.strictEqual(forgotRes.status, 200);
+  const forgotData = await forgotRes.json();
+  assert.strictEqual(forgotData.status, 'code_dispatched');
+  assert.ok(forgotData.code && forgotData.code.length === 6, 'Should dispatch 6-digit code');
+
+  // 3. Attempt reset with wrong code
+  const badVerifyReq = new Request('http://localhost:3000/api/auth?action=forgot_verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      identifier,
+      code: '000000',
+      newPassword,
+    }),
+  });
+  const badVerifyRes = await authPost(badVerifyReq);
+  assert.strictEqual(badVerifyRes.status, 400);
+
+  // 4. Reset with valid code
+  const goodVerifyReq = new Request('http://localhost:3000/api/auth?action=forgot_verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      identifier,
+      code: forgotData.code,
+      newPassword,
+    }),
+  });
+  const goodVerifyRes = await authPost(goodVerifyReq);
+  assert.strictEqual(goodVerifyRes.status, 200);
+  const goodVerifyData = await goodVerifyRes.json();
+  assert.strictEqual(goodVerifyData.status, 'password_reset_success');
+
+  // 5. Sign in with old password fails
+  const oldSigninReq = new Request('http://localhost:3000/api/auth?action=signin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      identifier,
+      password: initialPassword,
+    }),
+  });
+  const oldSigninRes = await authPost(oldSigninReq);
+  assert.strictEqual(oldSigninRes.status, 401);
+
+  // 6. Sign in with new password succeeds
+  const newSigninReq = new Request('http://localhost:3000/api/auth?action=signin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      identifier,
+      password: newPassword,
+    }),
+  });
+  const newSigninRes = await authPost(newSigninReq);
+  assert.strictEqual(newSigninRes.status, 200);
+  const newSigninData = await newSigninRes.json();
+  assert.strictEqual(newSigninData.status, 'authenticated');
+  assert.strictEqual(newSigninData.user.tenantId, tenantId);
+});
+
+

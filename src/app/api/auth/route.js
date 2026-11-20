@@ -9,13 +9,16 @@ import {
   maskIdentifier,
   createSessionToken,
   verifySessionToken,
+  generateResetCode,
+  storeResetCode,
+  verifyResetCode,
 } from '../../../lib/auth.js';
 
 /**
  * POST /api/auth
- * Handles tenant user Sign Up and Sign In with Email or Mobile Number.
+ * Handles tenant user Sign Up, Sign In, and Forgot Password Authenticator.
  * 
- * Query: ?action=signup | ?action=signin | ?action=signout
+ * Query: ?action=signup | ?action=signin | ?action=signout | ?action=forgot_request | ?action=forgot_verify
  */
 export async function POST(request) {
   try {
@@ -33,16 +36,9 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     }
 
-    const { identifier, password } = body;
+    const { identifier } = body;
     if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
       return NextResponse.json({ error: 'Email or mobile number is required' }, { status: 400 });
-    }
-
-    if (!password || typeof password !== 'string' || password.length < 6) {
-      return NextResponse.json(
-        { error: 'Password is required and must be at least 6 characters' },
-        { status: 400 }
-      );
     }
 
     const idType = detectIdentifierType(identifier);
@@ -54,6 +50,77 @@ export async function POST(request) {
     }
 
     const normalizedId = normalizeIdentifier(identifier, idType);
+
+    // --- FORGOT PASSWORD STEP 1: REQUEST AUTHENTICATOR RESET CODE ---
+    if (action === 'forgot_request') {
+      const user = defaultDatabase.getUserByIdentifier(normalizedId);
+      if (!user) {
+        return NextResponse.json(
+          { error: 'No tenant account found with this email or mobile number' },
+          { status: 404 }
+        );
+      }
+
+      const code = generateResetCode();
+      storeResetCode(normalizedId, code);
+
+      return NextResponse.json(
+        {
+          status: 'code_dispatched',
+          maskedIdentifier: maskIdentifier(normalizedId),
+          deliveryChannel: idType === 'email' ? 'Email Inbox' : 'SMS Text',
+          code, // Included so the demo/authenticator UI can display simulated OTP delivery
+          message: `6-digit reset code dispatched to ${maskIdentifier(normalizedId)}`,
+        },
+        { status: 200 }
+      );
+    }
+
+    // --- FORGOT PASSWORD STEP 2: VERIFY CODE & SET NEW PASSWORD ---
+    if (action === 'forgot_verify') {
+      const { code, newPassword } = body;
+      if (!code || typeof code !== 'string' || !code.trim()) {
+        return NextResponse.json({ error: '6-digit authenticator code is required' }, { status: 400 });
+      }
+
+      if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+        return NextResponse.json(
+          { error: 'New password is required and must be at least 6 characters' },
+          { status: 400 }
+        );
+      }
+
+      const isValidCode = verifyResetCode(normalizedId, code.trim());
+      if (!isValidCode) {
+        return NextResponse.json(
+          { error: 'Invalid or expired 6-digit authenticator code' },
+          { status: 400 }
+        );
+      }
+
+      const { salt, hash } = hashPassword(newPassword);
+      const updated = defaultDatabase.updateUserPassword(normalizedId, hash, salt);
+      if (!updated) {
+        return NextResponse.json({ error: 'Failed to update password' }, { status: 500 });
+      }
+
+      return NextResponse.json(
+        {
+          status: 'password_reset_success',
+          message: 'Password successfully updated. You may now sign in with your new password.',
+        },
+        { status: 200 }
+      );
+    }
+
+    // --- SIGN UP & SIGN IN REQUIRE PASSWORD ---
+    const { password } = body;
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return NextResponse.json(
+        { error: 'Password is required and must be at least 6 characters' },
+        { status: 400 }
+      );
+    }
 
     // --- SIGN UP ---
     if (action === 'signup') {

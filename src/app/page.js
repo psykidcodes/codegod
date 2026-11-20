@@ -76,12 +76,15 @@ export default function HomePage() {
   // Theme State: 'dark' | 'light'
   const [theme, setTheme] = useState('dark');
 
+  // Plain-English Explanation Mode: default true
+  const [simpleMode, setSimpleMode] = useState(true);
+
   // Auth & Session State
   const [currentUser, setCurrentUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
 
-  // Auth Form State (Sign In / Sign Up)
-  const [authMode, setAuthMode] = useState('signin'); // 'signin' | 'signup'
+  // Auth Form State: 'signin' | 'signup' | 'forgot'
+  const [authMode, setAuthMode] = useState('signin');
   const [authIdentifier, setAuthIdentifier] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -89,7 +92,14 @@ export default function HomePage() {
   const [authRegion, setAuthRegion] = useState('us-east-1');
   const [authTier, setAuthTier] = useState('enterprise');
   const [authError, setAuthError] = useState(null);
+  const [authSuccess, setAuthSuccess] = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
+
+  // Forgot Password Authenticator State
+  const [forgotStep, setForgotStep] = useState(1); // 1 = request code, 2 = verify & reset
+  const [forgotCode, setForgotCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [dispatchedCodeHint, setDispatchedCodeHint] = useState(null);
 
   // Active Tab & Loading
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'collector' | 'saas' | 'playground' | 'api'
@@ -130,14 +140,18 @@ export default function HomePage() {
   const [playgroundRunning, setPlaygroundRunning] = useState(false);
 
   // AI Active Reasoning Trace (prominent during attacks)
-  const [aiReasoningActive, setAiReasoningActive] = useState(false);
   const [aiReasoningSteps, setAiReasoningSteps] = useState([]);
 
-  // Initialize Theme & Session on Mount
+  // Initialize Theme, Simple Mode & Session on Mount
   useEffect(() => {
     const savedTheme = typeof window !== 'undefined' ? localStorage.getItem('cicada_theme') || 'dark' : 'dark';
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
+
+    const savedSimpleMode = typeof window !== 'undefined' ? localStorage.getItem('cicada_simple_mode') : null;
+    if (savedSimpleMode !== null) {
+      setSimpleMode(savedSimpleMode === 'true');
+    }
 
     const storedToken = typeof window !== 'undefined' ? localStorage.getItem('cicada_session_token') : null;
     if (storedToken) {
@@ -170,6 +184,13 @@ export default function HomePage() {
     setTheme(nextTheme);
     document.documentElement.setAttribute('data-theme', nextTheme);
     localStorage.setItem('cicada_theme', nextTheme);
+  };
+
+  // Simple Mode Toggle Handler
+  const toggleSimpleMode = () => {
+    const nextVal = !simpleMode;
+    setSimpleMode(nextVal);
+    localStorage.setItem('cicada_simple_mode', String(nextVal));
   };
 
   // Fetch Telemetry & Collector Data strictly for Authenticated Tenant
@@ -206,37 +227,36 @@ export default function HomePage() {
   const handleRunSimulation = async (scenario) => {
     if (!currentUser?.tenantId) return;
     setLoading(true);
-    setAiReasoningActive(true);
 
     const timeStr = new Date().toISOString().substring(11, 19) + ' UTC';
 
-    // 1. Set AI Reasoning Steps prominently
+    // Set prominent AI Reasoning steps
     let initialSteps = [];
     if (scenario === 'data_leaks') {
       initialSteps = [
-        { time: timeStr, title: 'Deep DLP Pattern Match', desc: 'Detected 5 exposed credentials (OpenAI key sk-live-***, AWS key, plaintext password, Credit Card PCI-DSS) in raw payload.', status: 'CRITICAL' },
+        { time: timeStr, title: 'Deep DLP Pattern Match', desc: 'Identified 5 exposed secrets (OpenAI key sk-live-***, AWS key, plaintext password, Credit Card PCI-DSS) in raw payload.', status: 'CRITICAL' },
         { time: timeStr, title: 'Privacy Shield Redaction', desc: 'Edge collector DLP purged 100% of sensitive fields before central SaaS engine forwarding.', status: 'ACTIVE' },
-        { time: timeStr, title: 'Multi-Tenant Incident Correlation', desc: 'Clustered security alerts into unified Incident INC-SEC-DLP with high confidence (96%).', status: 'ALERT' },
-        { time: timeStr, title: 'Prescriptive Runbook Formulation', desc: 'Formulated KMS secret rollback and IAM key revocation commands.', status: 'DONE' },
+        { time: timeStr, title: 'Incident Correlation', desc: 'Clustered security alerts into unified Incident INC-SEC-DLP with high confidence (96%).', status: 'ALERT' },
+        { time: timeStr, title: 'Prescriptive Runbook', desc: 'Formulated KMS secret rollback and IAM key revocation commands.', status: 'DONE' },
       ];
     } else if (scenario === 'failed_logins') {
       initialSteps = [
         { time: timeStr, title: 'Heuristic Signature Match', desc: 'SQL Injection pattern "UNION SELECT token" and botnet burst (520 failed logins) identified on /api/v1/auth/login.', status: 'CRITICAL' },
         { time: timeStr, title: 'Statistical Anomaly Detected', desc: 'Failed login rate escalated Z = 5.2σ above tenant baseline.', status: 'ALERT' },
-        { time: timeStr, title: 'Edge Shield Quarantine Triggered', desc: 'Edge Collector returned HTTP 403 Forbidden; origin IP rate-limited.', status: 'ACTIVE' },
-        { time: timeStr, title: 'Autonomous Playbook Generation', desc: 'Prescribed waf-cli rate limiting and access token revocation.', status: 'DONE' },
+        { time: timeStr, title: 'Edge Shield Quarantine', desc: 'Edge Collector returned HTTP 403 Forbidden; origin IP rate-limited.', status: 'ACTIVE' },
+        { time: timeStr, title: 'Autonomous Playbook', desc: 'Prescribed waf-cli rate limiting and access token revocation.', status: 'DONE' },
       ];
     } else if (scenario === 'outages') {
       initialSteps = [
         { time: timeStr, title: 'Host Node Crash Detected', desc: 'Primary database node db-master-us-east crashed due to Memory exhaustion (99%).', status: 'CRITICAL' },
-        { time: timeStr, title: 'Causal Chain Propagation Traced', desc: 'Infra failure cascaded to microservice network timeouts (4500ms) and ingress queue backpressure.', status: 'ALERT' },
-        { time: timeStr, title: 'Root Cause Confidence Calculated', desc: 'AIOps diagnosed database OOM as primary root cause with 95% confidence.', status: 'DONE' },
+        { time: timeStr, title: 'Causal Chain Propagation', desc: 'Infra failure cascaded to microservice network timeouts (4500ms) and ingress queue backpressure.', status: 'ALERT' },
+        { time: timeStr, title: 'Root Cause Diagnosed', desc: 'AIOps diagnosed database OOM as primary root cause with 95% confidence.', status: 'DONE' },
       ];
     } else if (scenario === 'spikes') {
       initialSteps = [
         { time: timeStr, title: 'Dynamic Baseline Breach', desc: 'Compute CPU surged to 99.4% and latency escalated to 2850ms (Z = 4.1σ).', status: 'ALERT' },
         { time: timeStr, title: 'SLA Risk Assessment', desc: 'Breached 99.9% tenant SLA target; active alerting triggered.', status: 'WARNING' },
-        { time: timeStr, title: 'Horizontal Autoscale Prescribed', desc: 'kubectl scale deployment/api-service --replicas=5 generated.', status: 'DONE' },
+        { time: timeStr, title: 'Horizontal Autoscale', desc: 'kubectl scale deployment/api-service --replicas=5 generated.', status: 'DONE' },
       ];
     } else {
       initialSteps = [
@@ -246,7 +266,7 @@ export default function HomePage() {
     setAiReasoningSteps(initialSteps);
 
     try {
-      // 2. Execute simulation scenario on the backend
+      // 1. Execute simulation scenario on the backend
       const res = await fetch('/api/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -260,7 +280,7 @@ export default function HomePage() {
           setAiopsData(data.aiopsReport);
         }
 
-        // 3. Automate Collector Playground: pass the scenario's raw payload to /api/collector
+        // 2. Automate Collector Playground: pass scenario raw payload to /api/collector
         const rawPayload = SCENARIO_RAW_PAYLOADS[scenario] || SCENARIO_RAW_PAYLOADS.data_leaks;
         setPlaygroundInput(JSON.stringify(rawPayload, null, 2));
 
@@ -276,12 +296,12 @@ export default function HomePage() {
           response: collectorData,
         });
 
-        // 4. Automatically switch to the Playground tab to demonstrate raw vs sanitized metadata
+        // 3. Automatically switch to the Playground tab to demonstrate raw vs sanitized metadata
         setActiveTab('playground');
 
         setActionMessage({
           type: data.aiopsReport?.healthStatus === 'HEALTHY' ? 'success' : 'warning',
-          text: `[AUTOMATED WORKFLOW] Scenario '${scenario}' simulated. Health status updated to ${data.aiopsReport?.healthStatus || 'UPDATED'}. Collector Playground automated below with live raw input vs sanitized metadata.`,
+          text: `[WORKFLOW COMPLETED] Scenario '${scenario}' simulated. Health status updated to ${data.aiopsReport?.healthStatus || 'UPDATED'}. Collector Playground automated below with live raw input vs sanitized metadata.`,
         });
 
         // Refresh all background counts
@@ -300,6 +320,7 @@ export default function HomePage() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError(null);
+    setAuthSuccess(null);
     setAuthLoading(true);
 
     try {
@@ -324,13 +345,76 @@ export default function HomePage() {
         setCurrentUser(data.user);
         setActionMessage({
           type: 'success',
-          text: `Authenticated session established for tenant '${data.user.tenantId}'. Row-level partition isolation active.`,
+          text: `Welcome! Authenticated session established for partition '${data.user.tenantId}'. Row-level tenant isolation active.`,
         });
       } else {
         setAuthError(data.error || 'Authentication failed. Please verify credentials.');
       }
     } catch (err) {
       setAuthError('Connection error: ' + err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Forgot Password Step 1: Request 6-digit Authenticator Code
+  const handleForgotRequest = async (e) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthSuccess(null);
+    setAuthLoading(true);
+
+    try {
+      const res = await fetch('/api/auth?action=forgot_request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: authIdentifier }),
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'code_dispatched') {
+        setDispatchedCodeHint(data.code);
+        setForgotCode(data.code); // Pre-fill for one-click testing ease
+        setForgotStep(2);
+        setAuthSuccess(`Authenticator verification code sent to ${data.maskedIdentifier} via ${data.deliveryChannel}. Code: ${data.code}`);
+      } else {
+        setAuthError(data.error || 'Failed to dispatch reset code. Please check your identifier.');
+      }
+    } catch (err) {
+      setAuthError('Network error: ' + err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Forgot Password Step 2: Verify Code & Set New Password
+  const handleForgotVerify = async (e) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthSuccess(null);
+    setAuthLoading(true);
+
+    try {
+      const res = await fetch('/api/auth?action=forgot_verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: authIdentifier,
+          code: forgotCode,
+          newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'password_reset_success') {
+        setAuthSuccess('Password has been securely updated! You may now sign in with your new password.');
+        setAuthPassword('');
+        setForgotStep(1);
+        setDispatchedCodeHint(null);
+        setAuthMode('signin');
+      } else {
+        setAuthError(data.error || 'Verification failed. Please check the code.');
+      }
+    } catch (err) {
+      setAuthError('Network error: ' + err.message);
     } finally {
       setAuthLoading(false);
     }
@@ -408,7 +492,7 @@ export default function HomePage() {
   }
 
   // ==========================================
-  // VIEW 1: UN-AUTHENTICATED LOGIN / SIGNUP
+  // VIEW 1: UN-AUTHENTICATED PORTAL (SIGN IN, SIGN UP, FORGOT PASSWORD)
   // ==========================================
   if (!currentUser) {
     return (
@@ -422,7 +506,8 @@ export default function HomePage() {
         padding: '32px 16px',
         position: 'relative',
       }}>
-        <div style={{ position: 'absolute', top: '24px', right: '24px' }}>
+        {/* Top Header Options */}
+        <div style={{ position: 'absolute', top: '24px', right: '24px', display: 'flex', gap: '8px' }}>
           <button
             onClick={toggleTheme}
             className="btn-minimal"
@@ -432,7 +517,8 @@ export default function HomePage() {
           </button>
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: '24px', maxWidth: '440px' }}>
+        {/* Brand Header */}
+        <div style={{ textAlign: 'center', marginBottom: '20px', maxWidth: '460px' }}>
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -451,11 +537,13 @@ export default function HomePage() {
             Cicada Telemetry & AIOps
           </h1>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Multi-Tenant Operational Observability & Threat Shield
+            Multi-Tenant Observability, Privacy Collector & Automated Attack Defense
           </p>
         </div>
 
-        <div className="card-minimal" style={{ maxWidth: '420px', width: '100%', padding: '26px' }}>
+        {/* Main Auth Card */}
+        <div className="card-minimal" style={{ maxWidth: '440px', width: '100%', padding: '26px' }}>
+          {/* Top 3-Way Mode Switcher */}
           <div style={{
             display: 'flex',
             background: 'var(--bg-canvas)',
@@ -465,145 +553,340 @@ export default function HomePage() {
             marginBottom: '18px',
           }}>
             <button
-              onClick={() => { setAuthMode('signin'); setAuthError(null); }}
+              onClick={() => { setAuthMode('signin'); setAuthError(null); setAuthSuccess(null); }}
               style={{
                 flex: 1,
-                padding: '6px 12px',
+                padding: '6px 8px',
                 border: 'none',
                 borderRadius: '4px',
                 background: authMode === 'signin' ? 'var(--bg-surface)' : 'transparent',
                 color: authMode === 'signin' ? 'var(--text-primary)' : 'var(--text-secondary)',
                 fontWeight: authMode === 'signin' ? '600' : '400',
-                fontSize: '0.82rem',
+                fontSize: '0.8rem',
                 cursor: 'pointer',
               }}
             >
               Sign In
             </button>
             <button
-              onClick={() => { setAuthMode('signup'); setAuthError(null); }}
+              onClick={() => { setAuthMode('signup'); setAuthError(null); setAuthSuccess(null); }}
               style={{
                 flex: 1,
-                padding: '6px 12px',
+                padding: '6px 8px',
                 border: 'none',
                 borderRadius: '4px',
                 background: authMode === 'signup' ? 'var(--bg-surface)' : 'transparent',
                 color: authMode === 'signup' ? 'var(--text-primary)' : 'var(--text-secondary)',
                 fontWeight: authMode === 'signup' ? '600' : '400',
-                fontSize: '0.82rem',
+                fontSize: '0.8rem',
                 cursor: 'pointer',
               }}
             >
-              Register Tenant
+              New User Sign Up
+            </button>
+            <button
+              onClick={() => { setAuthMode('forgot'); setForgotStep(1); setAuthError(null); setAuthSuccess(null); }}
+              style={{
+                flex: 1,
+                padding: '6px 8px',
+                border: 'none',
+                borderRadius: '4px',
+                background: authMode === 'forgot' ? 'var(--bg-surface)' : 'transparent',
+                color: authMode === 'forgot' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: authMode === 'forgot' ? '600' : '400',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              Forgot Password
             </button>
           </div>
 
+          {/* Feedback Messages */}
           {authError && (
             <div style={{
               background: 'var(--color-rose-subtle)',
               border: '1px solid rgba(244, 63, 94, 0.3)',
               color: 'var(--color-rose)',
-              padding: '10px 12px',
+              padding: '9px 12px',
               borderRadius: '6px',
-              fontSize: '0.8rem',
+              fontSize: '0.78rem',
               marginBottom: '14px',
             }}>
               {authError}
             </div>
           )}
+          {authSuccess && (
+            <div style={{
+              background: 'var(--color-emerald-subtle)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              color: 'var(--color-emerald)',
+              padding: '9px 12px',
+              borderRadius: '6px',
+              fontSize: '0.78rem',
+              marginBottom: '14px',
+            }}>
+              {authSuccess}
+            </div>
+          )}
 
-          <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {authMode === 'signup' && (
+          {/* 1. SIGN IN FORM */}
+          {authMode === 'signin' && (
+            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  Tenant Organization Name
+                  Email Address or Mobile Phone
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Acme Cloud Corp"
+                  placeholder="operator@company.com or +1 555-123-4567"
+                  value={authIdentifier}
+                  onChange={(e) => setAuthIdentifier(e.target.value)}
+                  className="input-minimal"
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '0.76rem', fontWeight: '500', color: 'var(--text-secondary)' }}>
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.72rem', cursor: 'pointer' }}
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Enter your password"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className="input-minimal"
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('forgot'); setForgotStep(1); setAuthError(null); setAuthSuccess(null); }}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}
+                  >
+                    Forgot password? Authenticate & reset →
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="btn-minimal-primary"
+                style={{ marginTop: '4px', width: '100%', padding: '9px' }}
+              >
+                {authLoading ? 'Signing In...' : 'Sign In to Workspace'}
+              </button>
+            </form>
+          )}
+
+          {/* 2. NEW USER SIGN UP PAGE */}
+          {authMode === 'signup' && (
+            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ background: 'var(--accent-subtle)', border: '1px solid var(--border-accent)', borderRadius: '6px', padding: '8px 12px', fontSize: '0.74rem' }}>
+                <strong>👋 New to Cicada?</strong> Registering provisions a private, row-level isolated partition. Your team gets dedicated anomaly baselines and zero-knowledge privacy.
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                  Organization / Company Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Acme Cloud Corp or My Startup"
                   value={authTenantName}
                   onChange={(e) => setAuthTenantName(e.target.value)}
                   className="input-minimal"
                 />
               </div>
-            )}
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                Email Address or Mobile Phone
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="operator@company.com or +1 555-123-4567"
-                value={authIdentifier}
-                onChange={(e) => setAuthIdentifier(e.target.value)}
-                className="input-minimal"
-              />
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                <label style={{ fontSize: '0.76rem', fontWeight: '500', color: 'var(--text-secondary)' }}>
-                  Password
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                  Work Email or Mobile Phone
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.72rem', cursor: 'pointer' }}
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
+                <input
+                  type="text"
+                  required
+                  placeholder="operator@company.com or +1 555-123-4567"
+                  value={authIdentifier}
+                  onChange={(e) => setAuthIdentifier(e.target.value)}
+                  className="input-minimal"
+                />
               </div>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                placeholder="Minimum 6 characters"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                className="input-minimal"
-              />
-              <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                🔒 Passwords remain solely with you. Derived via scrypt with 16-byte random salt.
-              </span>
-            </div>
 
-            {authMode === 'signup' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-secondary)' }}>
+                    Create Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.72rem', cursor: 'pointer' }}
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Minimum 6 characters"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className="input-minimal"
+                />
+                <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                  🔒 Derived using scrypt with random 16-byte salt. Never stored in plaintext.
+                </span>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>Tier</label>
-                  <select value={authTier} onChange={(e) => setAuthTier(e.target.value)} className="input-minimal" style={{ padding: '6px 8px', fontSize: '0.78rem' }}>
-                    <option value="enterprise">Enterprise (99.99%)</option>
-                    <option value="pro">Pro (99.9%)</option>
-                    <option value="starter">Starter (99.5%)</option>
+                  <label style={{ display: 'block', fontSize: '0.73rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>Service Tier</label>
+                  <select value={authTier} onChange={(e) => setAuthTier(e.target.value)} className="input-minimal" style={{ padding: '6px 8px', fontSize: '0.76rem' }}>
+                    <option value="enterprise">Enterprise (99.99% SLA)</option>
+                    <option value="pro">Pro (99.9% SLA)</option>
+                    <option value="starter">Starter ($0 / Testing)</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>Region</label>
-                  <select value={authRegion} onChange={(e) => setAuthRegion(e.target.value)} className="input-minimal" style={{ padding: '6px 8px', fontSize: '0.78rem' }}>
-                    <option value="us-east-1">us-east-1</option>
-                    <option value="eu-west-1">eu-west-1</option>
-                    <option value="us-west-2">us-west-2</option>
-                    <option value="ap-southeast-1">ap-southeast-1</option>
+                  <label style={{ display: 'block', fontSize: '0.73rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>Primary Region</label>
+                  <select value={authRegion} onChange={(e) => setAuthRegion(e.target.value)} className="input-minimal" style={{ padding: '6px 8px', fontSize: '0.76rem' }}>
+                    <option value="us-east-1">US East (N. Virginia)</option>
+                    <option value="eu-west-1">Europe (Ireland)</option>
+                    <option value="us-west-2">US West (Oregon)</option>
+                    <option value="ap-southeast-1">Asia (Singapore)</option>
                   </select>
                 </div>
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={authLoading}
-              className="btn-minimal-primary"
-              style={{ marginTop: '6px', width: '100%', padding: '9px' }}
-            >
-              {authLoading ? 'Verifying...' : authMode === 'signin' ? 'Sign In' : 'Provision Isolated Partition'}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="btn-minimal-primary"
+                style={{ marginTop: '6px', width: '100%', padding: '9px' }}
+              >
+                {authLoading ? 'Provisioning Partition...' : 'Create Workspace & Sign In'}
+              </button>
+            </form>
+          )}
 
-          <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px' }}>
+          {/* 3. FORGOT PASSWORD AUTHENTICATOR */}
+          {authMode === 'forgot' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px 12px', fontSize: '0.75rem' }}>
+                <strong>🔑 Authenticator Password Reset:</strong> Enter your registered email or mobile number to receive a 6-digit one-time authenticator verification code.
+              </div>
+
+              {forgotStep === 1 ? (
+                <form onSubmit={handleForgotRequest} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      Registered Email or Mobile Number
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. admin@acme.com or +1 555-123-4567"
+                      value={authIdentifier}
+                      onChange={(e) => setAuthIdentifier(e.target.value)}
+                      className="input-minimal"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="btn-minimal-primary"
+                    style={{ width: '100%', padding: '9px' }}
+                  >
+                    {authLoading ? 'Dispatching...' : 'Send 6-Digit Authenticator Code'}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleForgotVerify} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      6-Digit Authenticator Code
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="Enter 6-digit code"
+                      value={forgotCode}
+                      onChange={(e) => setForgotCode(e.target.value)}
+                      className="input-minimal"
+                      style={{ letterSpacing: '4px', fontSize: '1rem', textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+                    />
+                    {dispatchedCodeHint && (
+                      <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-emerald)', marginTop: '4px' }}>
+                        Simulated Code: <strong>{dispatchedCodeHint}</strong> (Valid for 10 minutes)
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      New Password (Min 6 Characters)
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Enter your new password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="input-minimal"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="btn-minimal-primary"
+                    style={{ width: '100%', padding: '9px' }}
+                  >
+                    {authLoading ? 'Updating...' : 'Verify Code & Set New Password'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setForgotStep(1)}
+                    className="btn-minimal"
+                    style={{ width: '100%', fontSize: '0.74rem' }}
+                  >
+                    ← Re-send code to another identifier
+                  </button>
+                </form>
+              )}
+
+              <div style={{ textAlign: 'center', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode('signin'); setAuthError(null); setAuthSuccess(null); }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '0.74rem', cursor: 'pointer' }}
+                >
+                  ← Back to Sign In
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Demo Credentials */}
+          <div style={{ marginTop: '18px', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
             <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
-              ONE-CLICK DEMO CREDENTIALS:
+              ONE-CLICK DEMO ACCOUNTS:
             </span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
               <button
@@ -613,9 +896,10 @@ export default function HomePage() {
                   setAuthIdentifier('admin@acme.com');
                   setAuthPassword('Password123!');
                   setAuthError(null);
+                  setAuthSuccess(null);
                 }}
                 className="btn-minimal"
-                style={{ fontSize: '0.74rem', justifyContent: 'flex-start' }}
+                style={{ fontSize: '0.73rem', justifyContent: 'flex-start' }}
               >
                 <span>🏢</span> <strong>Admin (Email):</strong> admin@acme.com / Password123!
               </button>
@@ -626,9 +910,10 @@ export default function HomePage() {
                   setAuthIdentifier('+1 555 123 4567');
                   setAuthPassword('Password123!');
                   setAuthError(null);
+                  setAuthSuccess(null);
                 }}
                 className="btn-minimal"
-                style={{ fontSize: '0.74rem', justifyContent: 'flex-start' }}
+                style={{ fontSize: '0.73rem', justifyContent: 'flex-start' }}
               >
                 <span>📱</span> <strong>Ops (Mobile):</strong> +1 555 123 4567 / Password123!
               </button>
@@ -636,8 +921,9 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div style={{ marginTop: '16px', maxWidth: '420px', textAlign: 'center', fontSize: '0.73rem', color: 'var(--text-muted)' }}>
-          🛡️ <strong>Zero-Cross-Tenant Isolation:</strong> Partition boundary enforced. Credential and PII masking applied automatically across all views.
+        {/* Isolation Footer Note */}
+        <div style={{ marginTop: '16px', maxWidth: '440px', textAlign: 'center', fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+          🛡️ <strong>Zero-Cross-Tenant Visibility:</strong> Partitions are strictly isolated. Credentials and personal data are masked automatically across all telemetry.
         </div>
       </div>
     );
@@ -647,14 +933,14 @@ export default function HomePage() {
   // VIEW 2: AUTHENTICATED OBSERVABILITY SUITE
   // ==========================================
   return (
-    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '18px 20px', minHeight: '100vh' }}>
-      {/* Top Professional Navigation Bar */}
+    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '16px 20px', minHeight: '100vh' }}>
+      {/* Top Header */}
       <header style={{
         display: 'flex',
         flexWrap: 'wrap',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingBottom: '14px',
+        paddingBottom: '12px',
         borderBottom: '1px solid var(--border-subtle)',
         marginBottom: '16px',
         gap: '12px',
@@ -685,9 +971,9 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Status Pill & User Badges */}
+        {/* Status, Simple Mode, Theme & Sign Out Controls */}
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-          {/* Live System Status Pill */}
+          {/* Status Pill */}
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -713,7 +999,7 @@ export default function HomePage() {
             <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>({aiopsData.healthScore}/100)</span>
           </div>
 
-          {/* Masked User Profile Badge */}
+          {/* User Profile Badge */}
           <div style={{
             background: 'var(--bg-surface)',
             border: '1px solid var(--border-subtle)',
@@ -730,6 +1016,21 @@ export default function HomePage() {
             <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{currentUser.maskedIdentifier}</span>
           </div>
 
+          {/* Simple Mode Toggle */}
+          <button
+            onClick={toggleSimpleMode}
+            className="btn-minimal"
+            style={{
+              padding: '5px 10px',
+              fontSize: '0.76rem',
+              borderColor: simpleMode ? 'var(--accent)' : 'var(--border-subtle)',
+              color: simpleMode ? 'var(--accent)' : 'var(--text-secondary)',
+            }}
+            title="Toggle plain-English simple explanations for non-technical users"
+          >
+            💡 Plain English: {simpleMode ? 'ON' : 'OFF'}
+          </button>
+
           <button onClick={() => refreshTenantData(currentUser.tenantId)} disabled={loading} className="btn-minimal" style={{ padding: '5px 10px' }}>
             <span>🔄</span> {loading ? 'Syncing...' : 'Sync'}
           </button>
@@ -744,7 +1045,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Prominent Real-Time AI Threat Response & Working Console */}
+      {/* Prominent Real-Time AI Threat Response Console */}
       <section style={{
         background: aiopsData.healthStatus === 'CRITICAL' ? 'var(--color-rose-subtle)' : aiopsData.healthStatus === 'DEGRADED' ? 'var(--color-amber-subtle)' : 'var(--bg-surface)',
         border: `1px solid ${aiopsData.healthStatus === 'CRITICAL' ? 'rgba(244, 63, 94, 0.35)' : aiopsData.healthStatus === 'DEGRADED' ? 'rgba(245, 158, 11, 0.35)' : 'var(--border-subtle)'}`,
@@ -752,7 +1053,7 @@ export default function HomePage() {
         padding: '14px 18px',
         marginBottom: '16px',
       }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span
               className={aiopsData.healthStatus !== 'HEALTHY' ? 'status-dot-active' : ''}
@@ -788,6 +1089,13 @@ export default function HomePage() {
           )}
         </div>
 
+        {/* Plain English explanation callout */}
+        {simpleMode && (
+          <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '8px 12px', fontSize: '0.75rem', marginBottom: '10px', color: 'var(--text-secondary)' }}>
+            <strong>💡 In Plain English:</strong> Our AI acts like a 24/7 autonomous security guard. When someone attacks your servers or leaks sensitive credentials, it spots the threat, blocks the damage, and tells you the exact steps to fix it.
+          </div>
+        )}
+
         {/* AI Cognitive Steps / Active Reasoning Stream */}
         {aiReasoningSteps.length > 0 ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px', marginTop: '6px' }}>
@@ -812,7 +1120,7 @@ export default function HomePage() {
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+          <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
             [IDLE] AI correlation daemon monitoring ingress telemetry. Ready for threat interception. Trigger a simulation below to observe real-time AI reasoning.
           </div>
         )}
@@ -825,69 +1133,72 @@ export default function HomePage() {
         borderRadius: '6px',
         padding: '10px 14px',
         marginBottom: '16px',
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '10px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)' }}>
-            SIMULATE OPERATIONAL EVENTS:
-          </span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+          <div>
+            <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)' }}>
+              SIMULATE OPERATIONAL EVENTS:
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            <button
+              onClick={() => handleRunSimulation('data_leaks')}
+              disabled={loading}
+              className="btn-minimal"
+              style={{ borderColor: 'rgba(244, 63, 94, 0.4)', color: 'var(--color-rose)', fontSize: '0.76rem', padding: '5px 11px' }}
+              title="Simulate employee leaking OpenAI/AWS keys and PCI card numbers, intercepted by DLP"
+            >
+              <span>🔒</span> Sensitive Data Leak (DLP)
+            </button>
+
+            <button
+              onClick={() => handleRunSimulation('failed_logins')}
+              disabled={loading}
+              className="btn-minimal"
+              style={{ borderColor: 'rgba(244, 63, 94, 0.4)', color: 'var(--color-rose)', fontSize: '0.76rem', padding: '5px 11px' }}
+              title="Simulate botnet credential stuffing & SQL injection bypass attempt"
+            >
+              <span>🛡️</span> SQLi / Brute-Force Attack
+            </button>
+
+            <button
+              onClick={() => handleRunSimulation('outages')}
+              disabled={loading}
+              className="btn-minimal"
+              style={{ fontSize: '0.76rem', padding: '5px 11px' }}
+              title="Simulate cascading database crash and connection pool timeout"
+            >
+              <span>💥</span> Cascading Service Outage
+            </button>
+
+            <button
+              onClick={() => handleRunSimulation('spikes')}
+              disabled={loading}
+              className="btn-minimal"
+              style={{ fontSize: '0.76rem', padding: '5px 11px' }}
+              title="Simulate sudden compute resource saturation & latency breach"
+            >
+              <span>⚡</span> Latency / CPU Surge
+            </button>
+
+            <button
+              onClick={() => handleRunSimulation('baseline')}
+              disabled={loading}
+              className="btn-minimal"
+              style={{ borderColor: 'rgba(16, 185, 129, 0.4)', color: 'var(--color-emerald)', fontSize: '0.76rem', padding: '5px 11px' }}
+              title="Reset telemetry partition back to clean baseline"
+            >
+              <span>🔄</span> Reset to Baseline
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-          <button
-            onClick={() => handleRunSimulation('data_leaks')}
-            disabled={loading}
-            className="btn-minimal"
-            style={{ borderColor: 'rgba(244, 63, 94, 0.4)', color: 'var(--color-rose)', fontSize: '0.76rem', padding: '5px 11px' }}
-            title="Simulate employee leaking OpenAI/AWS keys and PCI card numbers, intercepted by DLP"
-          >
-            <span>🔒</span> Sensitive Data Leak (DLP)
-          </button>
-
-          <button
-            onClick={() => handleRunSimulation('failed_logins')}
-            disabled={loading}
-            className="btn-minimal"
-            style={{ borderColor: 'rgba(244, 63, 94, 0.4)', color: 'var(--color-rose)', fontSize: '0.76rem', padding: '5px 11px' }}
-            title="Simulate botnet credential stuffing & SQL injection bypass attempt"
-          >
-            <span>🛡️</span> SQLi / Brute-Force Attack
-          </button>
-
-          <button
-            onClick={() => handleRunSimulation('outages')}
-            disabled={loading}
-            className="btn-minimal"
-            style={{ fontSize: '0.76rem', padding: '5px 11px' }}
-            title="Simulate cascading database crash and connection pool timeout"
-          >
-            <span>💥</span> Cascading Service Outage
-          </button>
-
-          <button
-            onClick={() => handleRunSimulation('spikes')}
-            disabled={loading}
-            className="btn-minimal"
-            style={{ fontSize: '0.76rem', padding: '5px 11px' }}
-            title="Simulate sudden compute resource saturation & latency breach"
-          >
-            <span>⚡</span> Latency / CPU Surge
-          </button>
-
-          <button
-            onClick={() => handleRunSimulation('baseline')}
-            disabled={loading}
-            className="btn-minimal"
-            style={{ borderColor: 'rgba(16, 185, 129, 0.4)', color: 'var(--color-emerald)', fontSize: '0.76rem', padding: '5px 11px' }}
-            title="Reset telemetry partition back to clean baseline"
-          >
-            <span>🔄</span> Reset to Baseline
-          </button>
-        </div>
+        {simpleMode && (
+          <div style={{ marginTop: '8px', fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+            💡 <strong>What are these buttons?</strong> Think of these like practice fire drills! Click any button to test how the AI catches simulated attacks, credential leaks, or server crashes without touching real production.
+          </div>
+        )}
       </section>
 
       {/* Notifications */}
@@ -949,9 +1260,16 @@ export default function HomePage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
           {/* Domain Health Radar */}
           <div className="card-minimal" style={{ padding: '18px' }}>
-            <h3 style={{ fontSize: '0.88rem', fontWeight: '600', marginBottom: '12px' }}>
-              Operational Domain Status
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ fontSize: '0.88rem', fontWeight: '600' }}>
+                Operational Domain Status
+              </h3>
+            </div>
+            {simpleMode && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                💡 <strong>In Plain English:</strong> A health check across the 4 key pillars of your app: Hardware servers (Infra), Network speed (Network), Cyber defense (Security), and Data pipeline (Collector).
+              </p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {Object.entries(aiopsData.categoryHealth || {}).map(([cat, stats]) => (
                 <div key={cat} style={{ background: 'var(--bg-canvas)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
@@ -971,7 +1289,7 @@ export default function HomePage() {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                     <span>Events: {stats.eventCount}</span>
-                    <span>Critical: {stats.criticalCount}</span>
+                    <span>Critical alerts: {stats.criticalCount}</span>
                   </div>
                 </div>
               ))}
@@ -980,9 +1298,14 @@ export default function HomePage() {
 
           {/* Anomaly Detection Radar */}
           <div className="card-minimal" style={{ padding: '18px' }}>
-            <h3 style={{ fontSize: '0.88rem', fontWeight: '600', marginBottom: '12px' }}>
-              Statistical Outlier Anomaly Detection (Z ≥ 2.0)
+            <h3 style={{ fontSize: '0.88rem', fontWeight: '600', marginBottom: '8px' }}>
+              Statistical Outlier Detection (Z ≥ 2.0)
             </h3>
+            {simpleMode && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                💡 <strong>In Plain English:</strong> The system learns normal day-to-day traffic. If latency or error rate suddenly jumps way higher than normal, the AI catches it before customers notice.
+              </p>
+            )}
             {(!aiopsData.anomalies || aiopsData.anomalies.length === 0) ? (
               <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                 All metric series conform to established baselines.
@@ -1012,9 +1335,14 @@ export default function HomePage() {
 
           {/* Correlated Incidents & Root Cause Analysis */}
           <div className="card-minimal" style={{ gridColumn: '1 / -1', padding: '18px' }}>
-            <h3 style={{ fontSize: '0.92rem', fontWeight: '600', marginBottom: '14px' }}>
-              Correlated Incident Records & Explainable Root Cause Analysis (RCA)
+            <h3 style={{ fontSize: '0.92rem', fontWeight: '600', marginBottom: '6px' }}>
+              Correlated Incident Records & Root Cause Analysis (RCA)
             </h3>
+            {simpleMode && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                💡 <strong>In Plain English:</strong> Instead of sending you 50 confusing error alerts, the AI groups them into 1 single incident, explains the root problem, and gives you a 1-click command to fix it.
+              </p>
+            )}
 
             {(!aiopsData.incidents || aiopsData.incidents.length === 0) ? (
               <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
@@ -1120,19 +1448,22 @@ export default function HomePage() {
       {activeTab === 'collector' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="card-minimal" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div>
                 <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
                   Edge Local Collector Agent (Client Perimeter Tier)
                 </h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  Runs as a local edge daemon or Kubernetes sidecar. Strips 100% of raw user content, executes Data Loss Prevention (DLP) regex filters, drops malicious exploits, and forwards only clean metadata to the upstream SaaS platform.
-                </p>
               </div>
               <span className="badge-minimal" style={{ background: 'var(--color-emerald-subtle)', color: 'var(--color-emerald)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
                 DAEMON LISTENING: 127.0.0.1:8081
               </span>
             </div>
+
+            {simpleMode && (
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px 12px', fontSize: '0.75rem', marginBottom: '14px', color: 'var(--text-secondary)' }}>
+                <strong>💡 In Plain English:</strong> Think of the Edge Collector as a personal security guard running right inside your local network. Before any telemetry is sent to the cloud, it strips out private messages, blurs credit cards and passwords, and blocks cyber attacks. Your raw sensitive data never leaves your building.
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '16px' }}>
               <div style={{ background: 'var(--bg-canvas)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
@@ -1140,7 +1471,7 @@ export default function HomePage() {
                 <div style={{ fontSize: '1.4rem', fontWeight: '700', marginTop: '2px', color: 'var(--text-primary)' }}>
                   {collectorStats.rawFieldsStrippedCount}
                 </div>
-                <span style={{ fontSize: '0.68rem', color: 'var(--accent)' }}>Zero raw data forwarded</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--accent)' }}>Zero raw content forwarded</span>
               </div>
 
               <div style={{ background: 'var(--bg-canvas)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
@@ -1148,7 +1479,7 @@ export default function HomePage() {
                 <div style={{ fontSize: '1.4rem', fontWeight: '700', marginTop: '2px', color: 'var(--color-rose)' }}>
                   {collectorStats.leaksPrevented}
                 </div>
-                <span style={{ fontSize: '0.68rem', color: 'var(--color-rose)' }}>Secrets scrubbed</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--color-rose)' }}>Secrets & PII scrubbed</span>
               </div>
 
               <div style={{ background: 'var(--bg-canvas)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
@@ -1202,9 +1533,11 @@ export default function HomePage() {
             <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '4px' }}>
               Central Multi-Tenant SaaS Engine (Cloud Platform Tier)
             </h3>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-              Central backend ingestion gateway receiving privacy-preserving metadata from edge collectors. Enforces strict row-level tenant partitioning, allow-list key schema validation, deduplication, and out-of-order timeline healing.
-            </p>
+            {simpleMode && (
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px 12px', fontSize: '0.75rem', marginBottom: '14px', color: 'var(--text-secondary)' }}>
+                <strong>💡 In Plain English:</strong> This is the central cloud platform. Just like a bank safe-deposit vault, every tenant gets their own locked partition. No tenant can ever see another company's data, and all database queries enforce row-level boundary locks.
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginBottom: '16px' }}>
               <div style={{ background: 'var(--bg-canvas)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
@@ -1245,47 +1578,42 @@ export default function HomePage() {
               <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
                 Collector Playground (Automated Verification)
               </h3>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                This inspector demonstrates zero-raw data leakage. Click any simulation button above or preset below to inspect the un-sanitized raw payload vs the sanitized privacy-preserving metadata forwarding.
-              </p>
             </div>
             <span className="badge-minimal" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid var(--border-accent)' }}>
               AUTOMATED AFTER SIMULATION
             </span>
           </div>
 
+          {simpleMode && (
+            <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px 12px', fontSize: '0.75rem', marginBottom: '12px', color: 'var(--text-secondary)' }}>
+              <strong>💡 In Plain English:</strong> A live interactive sandbox. You put "dirty" raw data containing passwords, API keys, or hacker scripts on the left. The Edge Collector cleans it up in milliseconds and shows you the safe, sanitized metadata on the right!
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
             <button
-              onClick={() => {
-                setPlaygroundInput(JSON.stringify(SCENARIO_RAW_PAYLOADS.data_leaks, null, 2));
-              }}
+              onClick={() => setPlaygroundInput(JSON.stringify(SCENARIO_RAW_PAYLOADS.data_leaks, null, 2))}
               className="btn-minimal"
               style={{ fontSize: '0.74rem' }}
             >
               Preset: Credential Leak Attempt (DLP)
             </button>
             <button
-              onClick={() => {
-                setPlaygroundInput(JSON.stringify(SCENARIO_RAW_PAYLOADS.failed_logins, null, 2));
-              }}
+              onClick={() => setPlaygroundInput(JSON.stringify(SCENARIO_RAW_PAYLOADS.failed_logins, null, 2))}
               className="btn-minimal"
               style={{ fontSize: '0.74rem' }}
             >
               Preset: SQLi Injection Attack (Shield)
             </button>
             <button
-              onClick={() => {
-                setPlaygroundInput(JSON.stringify(SCENARIO_RAW_PAYLOADS.spikes, null, 2));
-              }}
+              onClick={() => setPlaygroundInput(JSON.stringify(SCENARIO_RAW_PAYLOADS.spikes, null, 2))}
               className="btn-minimal"
               style={{ fontSize: '0.74rem' }}
             >
               Preset: Latency & CPU Spike
             </button>
             <button
-              onClick={() => {
-                setPlaygroundInput(JSON.stringify(SCENARIO_RAW_PAYLOADS.baseline, null, 2));
-              }}
+              onClick={() => setPlaygroundInput(JSON.stringify(SCENARIO_RAW_PAYLOADS.baseline, null, 2))}
               className="btn-minimal"
               style={{ fontSize: '0.74rem' }}
             >
@@ -1351,18 +1679,25 @@ export default function HomePage() {
       {/* TAB 5: Endpoints & Architecture */}
       {activeTab === 'api' && (
         <div className="card-minimal" style={{ padding: '20px' }}>
-          <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '12px' }}>
+          <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '6px' }}>
             System Architecture & REST Endpoints
           </h3>
+          {simpleMode && (
+            <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              💡 <strong>In Plain English:</strong> A cheat sheet for developers who want to connect other apps or scripts directly to Cicada using standard web requests.
+            </p>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontFamily: 'var(--font-mono)' }}>
             {[
-              { method: 'POST', endpoint: '/api/simulate', desc: 'Simulates telemetry ("data_leaks", "failed_logins", "outages", "spikes", "baseline") with live AIOps scoring.' },
+              { method: 'POST', endpoint: '/api/simulate', desc: 'Simulates events ("data_leaks", "failed_logins", "outages", "spikes", "baseline") with live AIOps scoring.' },
               { method: 'POST', endpoint: '/api/collector', desc: 'Edge collector: strips raw fields, DLP leak purge, threat shield, metadata forwarding.' },
               { method: 'GET', endpoint: '/api/collector', desc: 'Edge collector health, local buffer capacity, leak purge tallies, attack mitigation audits.' },
               { method: 'GET', endpoint: '/api/aiops?tenantId={id}', desc: 'Central AIOps intelligence: health score, anomaly detection, incident correlation, RCA.' },
               { method: 'POST', endpoint: '/api/auth?action=signup', desc: 'Registers isolated tenant partition with scrypt-hashed credentials and random salt.' },
               { method: 'POST', endpoint: '/api/auth?action=signin', desc: 'Constant-time authentication for email/mobile + password.' },
+              { method: 'POST', endpoint: '/api/auth?action=forgot_request', desc: 'Generates and dispatches 6-digit Authenticator verification code for password reset.' },
+              { method: 'POST', endpoint: '/api/auth?action=forgot_verify', desc: 'Verifies 6-digit Authenticator code and securely updates user password.' },
             ].map((api, idx) => (
               <div key={idx} style={{
                 background: 'var(--bg-canvas)',
