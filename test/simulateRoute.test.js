@@ -127,3 +127,45 @@ test('6. GET /api/database queries database tables with strict tenant isolation'
   assert.equal(dataStats.stats.totalEvents, 8);
   assert.equal(dataStats.stats.totalIncidents, 1);
 });
+
+test('7. POST /api/simulate runs "data_leaks" scenario, triggers DLP mitigation, and updates health status to CRITICAL', async () => {
+  const req = createMockRequest({
+    scenario: 'data_leaks',
+    tenantId: 'tenant-dlp-sim',
+  });
+
+  const res = await postSimulate(req);
+  assert.equal(res.status, 200);
+
+  const data = await res.json();
+  assert.equal(data.scenarioType, 'data_leaks');
+  assert.equal(data.eventsGeneratedCount, 3);
+  assert.ok(data.correlatedIncident);
+  assert.equal(data.correlatedIncident.category, 'security');
+  assert.equal(data.correlatedIncident.severity, 'critical');
+
+  // Verify health status updated immediately in returned aiopsReport
+  assert.ok(data.aiopsReport);
+  assert.equal(data.aiopsReport.healthStatus, 'CRITICAL');
+  assert.ok(data.aiopsReport.healthScore < 50);
+
+  // Recommendations include credential rotation
+  assert.ok(data.recommendations.some((r) => r.action === 'ROTATE_EXPOSED_KEYS' || r.action === 'ROTATE_CREDENTIALS'));
+});
+
+test('8. POST /api/simulate runs "baseline" scenario and restores health status to HEALTHY', async () => {
+  const req = createMockRequest({
+    scenario: 'baseline',
+    tenantId: 'tenant-baseline-restore',
+  });
+
+  const res = await postSimulate(req);
+  assert.equal(res.status, 200);
+
+  const data = await res.json();
+  assert.equal(data.scenarioType, 'baseline');
+  assert.ok(data.aiopsReport);
+  assert.equal(data.aiopsReport.healthStatus, 'HEALTHY');
+  assert.ok(data.aiopsReport.healthScore >= 85);
+});
+

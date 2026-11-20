@@ -16,11 +16,15 @@ import {
   generateRecommendations,
 } from './aiopsEngine.js';
 import { hashPassword } from './auth.js';
+import { ingestBatch } from './saasEngine.js';
+import { defaultCollector, ATTACK_TYPES, LEAK_TYPES } from './localCollector.js';
 
 export const SCENARIO_TYPES = Object.freeze({
   SPIKES: 'spikes',
   OUTAGES: 'outages',
   FAILED_LOGINS: 'failed_logins',
+  DATA_LEAKS: 'data_leaks',
+  BASELINE: 'baseline',
 });
 
 /**
@@ -875,12 +879,129 @@ export class TelemetryDatabase {
         JSON.stringify({ failedLoginCount: 520, attackType: 'SQL_INJECTION' }),
         new Date(baseTimeMs).toISOString()
       );
+
+      // Update edge collector threat mitigation counters
+      if (defaultCollector && defaultCollector.stats) {
+        defaultCollector.stats.attacksBlocked += 2;
+        defaultCollector.stats.attackBreakdown[ATTACK_TYPES.SQL_INJECTION] =
+          (defaultCollector.stats.attackBreakdown[ATTACK_TYPES.SQL_INJECTION] || 0) + 1;
+        defaultCollector.stats.attackBreakdown[ATTACK_TYPES.RATE_LIMIT_EXCEEDED] =
+          (defaultCollector.stats.attackBreakdown[ATTACK_TYPES.RATE_LIMIT_EXCEEDED] || 0) + 1;
+      }
+    } else if (scenarioType === SCENARIO_TYPES.DATA_LEAKS) {
+      // Sensitive Data Loss Prevention (DLP) leak scenario: employee / compromised worker emits secrets & customer PII
+      generatedEvents.push({
+        payloadId: `${simulationId}-dlp-key-leak`,
+        tenantId: normalizedTenant,
+        region,
+        sourceAlias: 'edge-auth-cluster',
+        eventTimestampUtc: new Date(baseTimeMs - 3 * 60 * 1000).toISOString(),
+        category: 'security',
+        severity: 'critical',
+        metrics: {
+          leaksDetectedAndRedacted: 5,
+          payloadSizeBytes: 1850,
+          fieldsStrippedCount: 8,
+          leakTypes: ['API_KEY', 'PASSWORD', 'CREDIT_CARD'],
+        },
+        summary: 'Critical credential exposure intercepted by DLP: OpenAI API key (sk-live-***), plaintext password, and Credit Card (PCI-DSS) purged',
+      });
+
+      generatedEvents.push({
+        payloadId: `${simulationId}-dlp-cloud-leak`,
+        tenantId: normalizedTenant,
+        region,
+        sourceAlias: 'worker-daemon',
+        eventTimestampUtc: new Date(baseTimeMs - 2 * 60 * 1000).toISOString(),
+        category: 'security',
+        severity: 'critical',
+        metrics: {
+          leaksDetectedAndRedacted: 3,
+          payloadSizeBytes: 940,
+          fieldsStrippedCount: 6,
+          leakTypes: ['AWS_KEY', 'BEARER_TOKEN'],
+        },
+        summary: 'Cloud credential leak blocked: AWS IAM access key & Bearer authentication token redacted from payload',
+      });
+
+      generatedEvents.push({
+        payloadId: `${simulationId}-dlp-pii-leak`,
+        tenantId: normalizedTenant,
+        region,
+        sourceAlias: 'customer-portal',
+        eventTimestampUtc: new Date(baseTimeMs - 1 * 60 * 1000).toISOString(),
+        category: 'security',
+        severity: 'high',
+        metrics: {
+          leaksDetectedAndRedacted: 2,
+          payloadSizeBytes: 620,
+          fieldsStrippedCount: 5,
+          leakTypes: ['SSN', 'EMAIL'],
+        },
+        summary: 'Sensitive PII exposure neutralized: Social Security Number (SSN) and personal email address scrubbed',
+      });
+
+      // Record in security_attacks / DLP log
+      this.db.prepare(`
+        INSERT INTO security_attacks (
+          tenant_id, source_alias, attack_type, severity, mitigation_status, summary, details_json, timestamp_utc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        normalizedTenant,
+        'edge-auth-cluster',
+        'CREDENTIAL_AND_PII_DATA_LEAK',
+        'critical',
+        'PURGED_BY_DLP_SHIELD',
+        'DLP scanner neutralized 10 exposed secrets (OpenAI API key, AWS IAM key, plaintext password, Credit Card, SSN, personal email)',
+        JSON.stringify({
+          leaksPrevented: 10,
+          leakTypes: ['API_KEY', 'BEARER_TOKEN', 'PASSWORD', 'CREDIT_CARD', 'SSN', 'EMAIL'],
+        }),
+        new Date(baseTimeMs).toISOString()
+      );
+
+      // Update edge collector DLP leak metrics
+      if (defaultCollector && defaultCollector.stats) {
+        defaultCollector.stats.leaksPrevented += 10;
+        defaultCollector.stats.leakBreakdown[LEAK_TYPES.API_KEY] =
+          (defaultCollector.stats.leakBreakdown[LEAK_TYPES.API_KEY] || 0) + 3;
+        defaultCollector.stats.leakBreakdown[LEAK_TYPES.PASSWORD] =
+          (defaultCollector.stats.leakBreakdown[LEAK_TYPES.PASSWORD] || 0) + 2;
+        defaultCollector.stats.leakBreakdown[LEAK_TYPES.CREDIT_CARD] =
+          (defaultCollector.stats.leakBreakdown[LEAK_TYPES.CREDIT_CARD] || 0) + 2;
+        defaultCollector.stats.leakBreakdown[LEAK_TYPES.BEARER_TOKEN] =
+          (defaultCollector.stats.leakBreakdown[LEAK_TYPES.BEARER_TOKEN] || 0) + 2;
+        defaultCollector.stats.leakBreakdown[LEAK_TYPES.SSN] =
+          (defaultCollector.stats.leakBreakdown[LEAK_TYPES.SSN] || 0) + 1;
+      }
+    } else if (scenarioType === SCENARIO_TYPES.BASELINE) {
+      // Normal healthy baseline operational traffic
+      for (let i = 0; i < 6; i++) {
+        generatedEvents.push({
+          payloadId: `${simulationId}-baseline-${i}`,
+          tenantId: normalizedTenant,
+          region,
+          sourceAlias: 'gateway-core',
+          eventTimestampUtc: new Date(baseTimeMs - (6 - i) * 30 * 1000).toISOString(),
+          category: 'network',
+          severity: 'low',
+          metrics: { latencyMs: 28 + (i % 3) * 4, cpuUsage: 18 + i * 2, errorRate: 0.0001 },
+          summary: 'Steady-state production telemetry within established baseline',
+        });
+      }
     } else {
-      throw new Error(`Unknown scenarioType "${scenarioType}". Must be 'spikes', 'outages', or 'failed_logins'`);
+      throw new Error(`Unknown scenarioType "${scenarioType}". Must be 'spikes', 'outages', 'failed_logins', or 'data_leaks'`);
     }
 
     // 1. Insert all generated telemetry events into DB
     this.insertBatch(generatedEvents);
+
+    // 2. Synchronize with in-memory SaaS Engine partition for real-time AIOps scoring
+    try {
+      ingestBatch(generatedEvents, 'collector-alpha-token');
+    } catch {
+      // Non-fatal if partition is in-memory only
+    }
 
     // 2. Compute dynamic baselines
     const baselines = this.updateMetricBaselines(normalizedTenant);

@@ -716,6 +716,31 @@ export function generateRecommendations(incident, rca) {
       description: `Immediately revoke current collector-token and issue rotated HMAC credentials.`,
       automatedRemediationPossible: false,
     });
+
+    if (
+      rca?.probableRootCause?.toLowerCase().includes('leak') ||
+      rca?.probableRootCause?.toLowerCase().includes('dlp') ||
+      rca?.probableRootCause?.toLowerCase().includes('credential') ||
+      rca?.probableRootCause?.toLowerCase().includes('pii')
+    ) {
+      recommendations.push({
+        id: 'rec-sec-dlp-rotate-03',
+        action: 'ROTATE_EXPOSED_KEYS',
+        priority: 'P1_CRITICAL',
+        title: 'Rotate compromised cloud keys and revoke exposed session tokens',
+        description: 'DLP scanner intercepted exposed API keys, passwords, or customer PII. Invalidate active bearer sessions and rotate AWS/OpenAI keys.',
+        automatedRemediationPossible: true,
+        command: 'vault kv rollback secret/platform-keys && aws iam create-access-key --user-name svc-collector',
+      });
+      recommendations.push({
+        id: 'rec-sec-dlp-audit-04',
+        action: 'AUDIT_MICROSERVICE_LOGGING',
+        priority: 'P2_HIGH',
+        title: 'Enforce pre-transmission DLP redaction rules across services',
+        description: 'Ensure all microservices filter payload parameters before forwarding to telemetry pipeline.',
+        automatedRemediationPossible: false,
+      });
+    }
   } else if (category === 'collector') {
     recommendations.push({
       id: 'rec-col-restart-01',

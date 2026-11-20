@@ -1,22 +1,28 @@
 import { NextResponse } from 'next/server.js';
 import { defaultDatabase, SCENARIO_TYPES } from '../../../lib/telemetryDatabase.js';
+import { analyzeTenantOps } from '../../../lib/aiopsEngine.js';
 
 const VALID_SCENARIOS = new Set([
   SCENARIO_TYPES.SPIKES,
   SCENARIO_TYPES.OUTAGES,
   SCENARIO_TYPES.FAILED_LOGINS,
+  SCENARIO_TYPES.DATA_LEAKS,
+  'data_leak',
+  'data_leaks',
+  'baseline',
 ]);
 
 /**
  * POST /api/simulate
- * Executes a simulated telemetry scenario ('spikes', 'outages', 'failed_logins'):
- * - Generates and persists realistic telemetry streams in the database.
+ * Executes a simulated telemetry scenario ('spikes', 'outages', 'failed_logins', 'data_leaks', 'baseline'):
+ * - Generates and persists realistic telemetry streams in the database and in-memory engine.
  * - Executes dynamic baseline anomaly detection.
  * - Correlates multiple alerts into one unified Incident record.
  * - Produces transparent, explainable Root Cause Analysis (RCA) and prioritized recommendations.
+ * - Directly computes and returns updated AIOps report with live health status.
  * 
  * Body:
- * - scenario (required): 'spikes' | 'outages' | 'failed_logins'
+ * - scenario (required): 'spikes' | 'outages' | 'failed_logins' | 'data_leaks' | 'baseline'
  * - tenantId (required): Target tenant identifier
  * - region (optional): Origin region (default 'us-east-1')
  */
@@ -53,18 +59,27 @@ export async function POST(request) {
     if (!scenario || !VALID_SCENARIOS.has(scenario)) {
       return NextResponse.json(
         {
-          error: `Invalid or missing scenario. Must be one of: ${Array.from(VALID_SCENARIOS).join(', ')}`,
+          error: `Invalid or missing scenario. Must be one of: spikes, outages, failed_logins, data_leaks, baseline`,
         },
         { status: 400 }
       );
     }
 
+    let scenarioToRun = scenario;
+    if (scenario === 'data_leak') scenarioToRun = SCENARIO_TYPES.DATA_LEAKS;
+
     const region = body.region && typeof body.region === 'string' ? body.region.trim() : 'us-east-1';
 
     // Execute database-backed simulation with integrated AI analysis
-    const simulationResult = defaultDatabase.simulateScenario(scenario, tenantId, { region });
+    const simulationResult = defaultDatabase.simulateScenario(scenarioToRun, tenantId, { region });
 
-    return NextResponse.json(simulationResult, { status: 200 });
+    // Directly compute up-to-date AIOps intelligence report after simulation
+    const aiopsReport = analyzeTenantOps(tenantId, { region });
+
+    return NextResponse.json({
+      ...simulationResult,
+      aiopsReport,
+    }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
       {

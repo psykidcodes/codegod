@@ -254,3 +254,34 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
 }
+
+/* Operational Status Dot with Subtle Breathing Animation */
+@keyframes statusBreathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.15); }
+}
+
+.status-dot-active {
+  animation: statusBreathe 2s infinite ease-in-out;
+}
+
+/* Professional Terminal Log Viewer */
+.terminal-window {
+  background: var(--code-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  overflow-x: auto;
+}
+
+/* Professional Table & Metrics Row */
+.table-row-clean {
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background-color 0.15s ease;
+}
+.table-row-clean:hover {
+  background-color: var(--bg-surface-elevated);
+}
