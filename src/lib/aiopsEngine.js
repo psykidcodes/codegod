@@ -653,9 +653,9 @@ export function generateRecommendations(incident, rca) {
   const source = rootEvent.sourceAlias || 'affected-node';
   const region = rootEvent.region || 'primary-region';
 
-  if (category === 'infra') {
-    const isMemory = rca.probableRootCause.includes('Memory');
-    const isCpu = rca.probableRootCause.includes('CPU');
+  if (category === 'infra' || rca?.probableRootCause?.includes('CPU') || rca?.probableRootCause?.includes('Memory')) {
+    const isMemory = rca?.probableRootCause?.includes('Memory');
+    const isCpu = rca?.probableRootCause?.includes('CPU');
 
     recommendations.push({
       id: 'rec-infra-scale-01',
