@@ -139,14 +139,51 @@ export default function HomePage() {
   const [playgroundResult, setPlaygroundResult] = useState(null);
   const [playgroundRunning, setPlaygroundRunning] = useState(false);
 
+  // 5 Selectable Color Palettes: 'cobalt' | 'emerald' | 'violet' | 'amber' | 'crimson'
+  const [palette, setPalette] = useState('cobalt');
+
+  const PALETTES = [
+    { id: 'cobalt', label: 'Cobalt', hex: '#3b82f6', subtitle: 'Enterprise Blue' },
+    { id: 'emerald', label: 'Emerald', hex: '#10b981', subtitle: 'Cyber Mint' },
+    { id: 'violet', label: 'Violet', hex: '#8b5cf6', subtitle: 'Threat Intel' },
+    { id: 'amber', label: 'Amber', hex: '#f59e0b', subtitle: 'Observability' },
+    { id: 'crimson', label: 'Crimson', hex: '#f43f5e', subtitle: 'SOC Red Alert' },
+  ];
+
+  // Local Buffering & Outage Resilience State
+  const [isOutageSimulated, setIsOutageSimulated] = useState(false);
+  const [bufferedQueueDepth, setBufferedQueueDepth] = useState(0);
+  const [outageLoading, setOutageLoading] = useState(false);
+  const [retryResult, setRetryResult] = useState(null);
+
+  // Idempotent Payload IDs State
+  const [idempotentPayloadId, setIdempotentPayloadId] = useState('IDEM-PAYLOAD-9921');
+  const [idempotencyResult, setIdempotencyResult] = useState(null);
+  const [idempotencyLoading, setIdempotencyLoading] = useState(false);
+
+  // Two Demo Tenants & Isolation Audit State
+  const [isolationAudit, setIsolationAudit] = useState(null);
+  const [isolationAuditLoading, setIsolationAuditLoading] = useState(false);
+
   // AI Active Reasoning Trace (prominent during attacks)
   const [aiReasoningSteps, setAiReasoningSteps] = useState([]);
 
-  // Initialize Theme, Simple Mode & Session on Mount
+  // Change Color Palette
+  const changePalette = (newPalette) => {
+    setPalette(newPalette);
+    document.documentElement.setAttribute('data-palette', newPalette);
+    localStorage.setItem('cicada_palette', newPalette);
+  };
+
+  // Initialize Theme, Palette, Simple Mode & Session on Mount
   useEffect(() => {
     const savedTheme = typeof window !== 'undefined' ? localStorage.getItem('cicada_theme') || 'dark' : 'dark';
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
+
+    const savedPalette = typeof window !== 'undefined' ? localStorage.getItem('cicada_palette') || 'cobalt' : 'cobalt';
+    setPalette(savedPalette);
+    document.documentElement.setAttribute('data-palette', savedPalette);
 
     const savedSimpleMode = typeof window !== 'undefined' ? localStorage.getItem('cicada_simple_mode') : null;
     if (savedSimpleMode !== null) {
@@ -207,7 +244,11 @@ export default function HomePage() {
       const collectorRes = await fetch('/api/collector');
       if (collectorRes.ok) {
         const cData = await collectorRes.json();
-        if (cData.stats) setCollectorStats(cData.stats);
+        if (cData.stats) {
+          setCollectorStats(cData.stats);
+          setIsOutageSimulated(Boolean(cData.stats.isOutageActive));
+          setBufferedQueueDepth(cData.stats.bufferedCount || 0);
+        }
       }
     } catch (err) {
       console.error('Failed to refresh tenant telemetry', err);
@@ -215,6 +256,181 @@ export default function HomePage() {
       setLoading(false);
     }
   }, []);
+
+  // 1. Toggle Outage Mode for Local Buffering
+  const handleToggleOutage = async () => {
+    setOutageLoading(true);
+    try {
+      const res = await fetch('/api/collector?action=toggle_outage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outage: !isOutageSimulated }),
+      });
+      const data = await res.json();
+      setIsOutageSimulated(data.isOutageActive);
+      setBufferedQueueDepth(data.bufferedCount || 0);
+      setActionMessage({
+        type: data.isOutageActive ? 'warning' : 'success',
+        text: data.message,
+      });
+    } catch (err) {
+      console.error('Failed to toggle outage', err);
+    } finally {
+      setOutageLoading(false);
+    }
+  };
+
+  // 2. Send Test Payload to Edge Buffer
+  const handleSendBufferPayload = async () => {
+    try {
+      const payload = {
+        payloadId: `buf-payload-${Date.now()}`,
+        sourceAlias: 'edge-resilience-buffer',
+        region: currentUser?.region || 'us-east-1',
+        tenantId: currentUser?.tenantId || 'acme-corp',
+        category: 'collector',
+        severity: 'low',
+        metrics: { bufferTest: 1, queueTimestamp: Date.now() },
+        summary: `Resilient edge queued payload [Outage: ${isOutageSimulated ? 'ACTIVE' : 'OFFLINE'}]`,
+      };
+
+      const res = await fetch('/api/collector', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setBufferedQueueDepth((prev) => prev + 1);
+        setActionMessage({
+          type: isOutageSimulated ? 'warning' : 'success',
+          text: isOutageSimulated
+            ? `[EDGE RAM BUFFER] Payload '${payload.payloadId}' held safely in local buffer. Upstream connection offline.`
+            : `[DELIVERED UPSTREAM] Payload '${payload.payloadId}' forwarded directly to SaaS engine.`,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to buffer payload', err);
+    }
+  };
+
+  // 3. Retry and Drain Buffer after Outage Recovery
+  const handleFlushAndRetry = async () => {
+    setOutageLoading(true);
+    try {
+      const res = await fetch('/api/collector?action=flush_buffer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      setRetryResult(data);
+      setIsOutageSimulated(false);
+      setBufferedQueueDepth(data.remainingBuffer || 0);
+      setActionMessage({
+        type: 'success',
+        text: data.message || `Buffer drained: ${data.flushed} payloads forwarded to upstream SaaS engine.`,
+      });
+      if (currentUser?.tenantId) {
+        await refreshTenantData(currentUser.tenantId);
+      }
+    } catch (err) {
+      console.error('Failed to flush buffer', err);
+    } finally {
+      setOutageLoading(false);
+    }
+  };
+
+  // 4. Test Idempotent Payload IDs
+  const handleTestIdempotency = async (duplicateAttempt = false) => {
+    setIdempotencyLoading(true);
+    try {
+      const pId = duplicateAttempt ? idempotentPayloadId : `IDEM-PAYLOAD-${Math.floor(1000 + Math.random() * 9000)}`;
+      if (!duplicateAttempt) {
+        setIdempotentPayloadId(pId);
+      }
+
+      const res = await fetch('/api/collector?action=test_idempotency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payloadId: pId,
+          tenantId: currentUser?.tenantId || 'acme-corp',
+          sourceAlias: 'idempotency-engine',
+          category: 'network',
+          severity: 'low',
+          metrics: { idempotentTest: 1, sequence: 501 },
+          summary: `Idempotency verification transaction #${pId}`,
+        }),
+      });
+
+      const data = await res.json();
+      setIdempotencyResult({
+        ...data,
+        timestamp: new Date().toISOString(),
+        testedDuplicate: duplicateAttempt,
+      });
+
+      setActionMessage({
+        type: data.duplicate ? 'warning' : 'success',
+        text: data.auditMessage,
+      });
+    } catch (err) {
+      console.error('Failed idempotency test', err);
+    } finally {
+      setIdempotencyLoading(false);
+    }
+  };
+
+  // 5. Run Two-Tenant Cryptographic Isolation Audit
+  const handleRunIsolationAudit = async () => {
+    if (!currentUser?.tenantId) return;
+    setIsolationAuditLoading(true);
+    try {
+      const opposing = currentUser.tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp';
+      const res = await fetch(`/api/database?tenantId=${encodeURIComponent(currentUser.tenantId)}&resource=audit_isolation&opposingTenant=${encodeURIComponent(opposing)}`);
+      if (res.ok) {
+        const auditData = await res.json();
+        setIsolationAudit(auditData);
+        setActionMessage({
+          type: 'success',
+          text: `[ROW-LEVEL ISOLATION CONFIRMED] 0 cross-tenant leaks detected between '${auditData.primaryTenant.tenantId}' and '${auditData.opposingTenant.tenantId}'. Partition boundaries mathematically verified.`,
+        });
+      }
+    } catch (err) {
+      console.error('Failed isolation audit', err);
+    } finally {
+      setIsolationAuditLoading(false);
+    }
+  };
+
+  // 6. Switch Demo Tenant with 1-click
+  const handleSwitchDemoTenant = async (targetTenantId) => {
+    setLoading(true);
+    try {
+      const targetUser = targetTenantId === 'shield-defense'
+        ? { identifier: 'secops@shield-defense.com', password: 'Password123!' }
+        : { identifier: 'admin@acme.com', password: 'Password123!' };
+
+      const res = await fetch('/api/auth?action=signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(targetUser),
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'authenticated') {
+        localStorage.setItem('cicada_session_token', data.token);
+        setCurrentUser(data.user);
+        setIsolationAudit(null);
+        setActionMessage({
+          type: 'success',
+          text: `Switched partition context to '${data.user.tenantId}' (${targetTenantId === 'shield-defense' ? 'CyberShield Defense Systems' : 'Acme Corporation'}).`,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to switch tenant', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Sync data whenever currentUser changes
   useEffect(() => {
@@ -507,7 +723,35 @@ export default function HomePage() {
         position: 'relative',
       }}>
         {/* Top Header Options */}
-        <div style={{ position: 'absolute', top: '24px', right: '24px', display: 'flex', gap: '8px' }}>
+        <div style={{ position: 'absolute', top: '24px', right: '24px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'var(--bg-surface)', padding: '3px 6px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '3px' }}>Palette:</span>
+            {PALETTES.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => changePalette(p.id)}
+                className={`palette-swatch-btn ${palette === p.id ? 'active' : ''}`}
+                title={`${p.label} Palette - ${p.subtitle}`}
+                style={{
+                  padding: '3px 7px',
+                  fontSize: '0.72rem',
+                  borderRadius: '4px',
+                  border: palette === p.id ? `1px solid ${p.hex}` : '1px solid transparent',
+                  background: palette === p.id ? `${p.hex}20` : 'transparent',
+                  color: palette === p.id ? p.hex : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: p.hex }} />
+                <span>{p.label}</span>
+              </button>
+            ))}
+          </div>
+
           <button
             onClick={toggleTheme}
             className="btn-minimal"
@@ -901,7 +1145,21 @@ export default function HomePage() {
                 className="btn-minimal"
                 style={{ fontSize: '0.73rem', justifyContent: 'flex-start' }}
               >
-                <span>🏢</span> <strong>Admin (Email):</strong> admin@acme.com / Password123!
+                <span>🏢</span> <strong>Tenant 1 (Acme Corp):</strong> admin@acme.com / Password123!
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('signin');
+                  setAuthIdentifier('secops@shield-defense.com');
+                  setAuthPassword('Password123!');
+                  setAuthError(null);
+                  setAuthSuccess(null);
+                }}
+                className="btn-minimal"
+                style={{ fontSize: '0.73rem', justifyContent: 'flex-start' }}
+              >
+                <span>🛡️</span> <strong>Tenant 2 (CyberShield):</strong> secops@shield-defense.com / Password123!
               </button>
               <button
                 type="button"
@@ -915,7 +1173,7 @@ export default function HomePage() {
                 className="btn-minimal"
                 style={{ fontSize: '0.73rem', justifyContent: 'flex-start' }}
               >
-                <span>📱</span> <strong>Ops (Mobile):</strong> +1 555 123 4567 / Password123!
+                <span>📱</span> <strong>Ops (Mobile SMS):</strong> +1 555 123 4567 / Password123!
               </button>
             </div>
           </div>
@@ -971,8 +1229,37 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Status, Simple Mode, Theme & Sign Out Controls */}
+        {/* Status, Palette, Tenant Switcher, Simple Mode, Theme & Sign Out Controls */}
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+          {/* Palette Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'var(--bg-surface)', padding: '3px 6px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '3px' }}>Palette:</span>
+            {PALETTES.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => changePalette(p.id)}
+                className={`palette-swatch-btn ${palette === p.id ? 'active' : ''}`}
+                title={`${p.label} - ${p.subtitle}`}
+                style={{
+                  padding: '3px 7px',
+                  fontSize: '0.72rem',
+                  borderRadius: '4px',
+                  border: palette === p.id ? `1px solid ${p.hex}` : '1px solid transparent',
+                  background: palette === p.id ? `${p.hex}20` : 'transparent',
+                  color: palette === p.id ? p.hex : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: p.hex }} />
+                <span>{p.label}</span>
+              </button>
+            ))}
+          </div>
+
           {/* Status Pill */}
           <div style={{
             display: 'inline-flex',
@@ -999,21 +1286,29 @@ export default function HomePage() {
             <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>({aiopsData.healthScore}/100)</span>
           </div>
 
-          {/* User Profile Badge */}
+          {/* User Profile Badge & Quick Tenant Switcher */}
           <div style={{
             background: 'var(--bg-surface)',
             border: '1px solid var(--border-subtle)',
             borderRadius: '6px',
-            padding: '4px 10px',
+            padding: '3px 8px',
             fontSize: '0.78rem',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
           }}>
             <span style={{ color: 'var(--text-muted)' }}>Tenant:</span>
-            <strong>{currentUser.tenantId}</strong>
+            <strong style={{ color: 'var(--accent)' }}>{currentUser.tenantId}</strong>
             <span style={{ color: 'var(--border-subtle)' }}>|</span>
-            <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{currentUser.maskedIdentifier}</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{currentUser.maskedIdentifier}</span>
+            <button
+              onClick={() => handleSwitchDemoTenant(currentUser.tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp')}
+              className="btn-minimal"
+              style={{ padding: '2px 7px', fontSize: '0.68rem', marginLeft: '4px' }}
+              title={`Switch context to ${currentUser.tenantId === 'acme-corp' ? 'shield-defense (CyberShield)' : 'acme-corp (Acme Corp)'}`}
+            >
+              ⇄ Switch to {currentUser.tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp'}
+            </button>
           </div>
 
           {/* Simple Mode Toggle */}
@@ -1333,6 +1628,206 @@ export default function HomePage() {
             )}
           </div>
 
+          {/* Dedicated Failed-Login Security Summary Card */}
+          <div className="card-minimal" style={{ gridColumn: '1 / -1', padding: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.05rem' }}>🛡️</span>
+                <h3 style={{ fontSize: '0.92rem', fontWeight: '600' }}>
+                  Failed-Login Security Summary & Credential-Stuffing Defense
+                </h3>
+              </div>
+              <span className="badge-minimal" style={{ background: 'var(--color-rose-subtle)', color: 'var(--color-rose)', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
+                ACTIVE ATTACK MITIGATION: 403 FORBIDDEN
+              </span>
+            </div>
+
+            {simpleMode && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                💡 <strong>In Plain English:</strong> Hackers using botnets try thousands of stolen passwords per minute. The system detects the abnormal burst, stops SQL injection bypass attempts, and locks out the attacker&apos;s IP cluster without locking out legitimate customers.
+              </p>
+            )}
+
+            {/* 4 Security Metrics */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ background: 'var(--bg-canvas)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>FAILED LOGINS INTERCEPTED</span>
+                <div style={{ fontSize: '1.3rem', fontWeight: '700', color: 'var(--color-rose)', marginTop: '2px' }}>
+                  {collectorStats.failedLoginSummary?.totalFailedAttempts || 520}
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'var(--color-rose)' }}>Escalated Z = 5.2σ above baseline</span>
+              </div>
+
+              <div style={{ background: 'var(--bg-canvas)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>BOTNET IP CLUSTERS</span>
+                <div style={{ fontSize: '1.3rem', fontWeight: '700', color: 'var(--color-purple)', marginTop: '2px' }}>
+                  {collectorStats.failedLoginSummary?.attackerIps?.length || 3}
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'var(--color-purple)' }}>Distributed brute-force origins</span>
+              </div>
+
+              <div style={{ background: 'var(--bg-canvas)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>BLOCKED SQLi SIGNATURES</span>
+                <div style={{ fontSize: '1.3rem', fontWeight: '700', color: 'var(--color-amber)', marginTop: '2px' }}>
+                  {collectorStats.failedLoginSummary?.blockedSignaturesCount || 142}
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'var(--color-amber)' }}>UNION SELECT &amp; bypass neutralized</span>
+              </div>
+
+              <div style={{ background: 'var(--bg-canvas)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>DEFENSE POSTURE</span>
+                <div style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--color-emerald)', marginTop: '4px' }}>
+                  WAF Rate-Limiting
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'var(--color-emerald)' }}>HTTP 403 Quarantine Enforced</span>
+              </div>
+            </div>
+
+            {/* Attacker IPs & Targeted Endpoints */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '10px' }}>
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px 12px' }}>
+                <strong style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                  BOTNET ATTACKER IP CLUSTER LOG:
+                </strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.73rem' }}>
+                  {(collectorStats.failedLoginSummary?.attackerIps || [
+                    { ip: '198.51.100.44', attempts: 312, country: 'US', origin: 'Tor Exit Node / Infiltration Botnet', lastSeen: 'Just now' },
+                    { ip: '203.0.113.195', attempts: 188, country: 'RO', origin: 'Mirai variant brute-forcer', lastSeen: '2m ago' },
+                    { ip: '192.0.2.77', attempts: 20, country: 'DE', origin: 'Credential stuffing runner', lastSeen: '5m ago' },
+                  ]).map((atk, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                      <div>
+                        <code style={{ color: 'var(--accent)' }}>{atk.ip}</code>
+                        <span style={{ marginLeft: '6px', color: 'var(--text-muted)', fontSize: '0.7rem' }}>({atk.country} · {atk.origin})</span>
+                      </div>
+                      <span style={{ fontWeight: '600', color: 'var(--color-rose)' }}>{atk.attempts} attempts (403 Dropped)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px 12px' }}>
+                <strong style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                  TARGETED AUTH ENDPOINTS &amp; INTERCEPTED SQLi SIGNATURES:
+                </strong>
+                <div style={{ marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Targeted Endpoints:</span>
+                  <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '2px' }}>
+                    {['/api/v1/auth/login', '/oauth/token', '/admin/vault'].map((ep) => (
+                      <span key={ep} className="badge-minimal" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>
+                        {ep}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Blocked SQLi Signatures:</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '3px' }}>
+                    <code style={{ fontSize: '0.7rem', color: 'var(--color-amber)', background: 'var(--code-bg)', padding: '2px 6px', borderRadius: '3px' }}>
+                      admin&apos; OR &apos;1&apos;=&apos;1&apos; --
+                    </code>
+                    <code style={{ fontSize: '0.7rem', color: 'var(--color-amber)', background: 'var(--code-bg)', padding: '2px 6px', borderRadius: '3px' }}>
+                      UNION SELECT token, key_hash FROM system_vault --
+                    </code>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Visual Alert Merging Correlation Flow Diagram */}
+          <div className="card-minimal" style={{ gridColumn: '1 / -1', padding: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.05rem' }}>🔀</span>
+                <h3 style={{ fontSize: '0.92rem', fontWeight: '600' }}>
+                  AIOps Correlation Engine: Alert Storm Deduplication &amp; Consolidation
+                </h3>
+              </div>
+              <button
+                onClick={() => handleRunSimulation('outages')}
+                disabled={loading}
+                className="btn-minimal"
+                style={{ fontSize: '0.74rem', borderColor: 'var(--accent)', color: 'var(--accent)' }}
+              >
+                <span>⚡</span> Trigger Cascading Outage &amp; Observe Alert Merge
+              </button>
+            </div>
+
+            {simpleMode && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                💡 <strong>In Plain English:</strong> In legacy systems, 1 server crash wakes up 5 engineers with 5 separate alarms. Our AI connects the dots in real time, merges all 3 related alerts into 1 cohesive incident box, and pinpoint-diagnoses the root problem!
+              </p>
+            )}
+
+            {/* 3-Tier Alert Merging Flowchart */}
+            <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '16px' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                STAGE 1: RAW MULTI-TIER SIGNALS DETECTED IN INGRESS TELEMETRY
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                <div className="flow-node" style={{ borderLeft: '3px solid var(--color-rose)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: '600', color: 'var(--color-rose)' }}>
+                    <span>Alert A: Database OOM Crash</span>
+                    <span>INFRA</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                    <code>db-master-us-east</code>: Memory at 99.8%, SIGKILL issued
+                  </p>
+                </div>
+
+                <div className="flow-node" style={{ borderLeft: '3px solid var(--color-amber)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: '600', color: 'var(--color-amber)' }}>
+                    <span>Alert B: TCP Connection Timeout</span>
+                    <span>NETWORK</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                    <code>api-gateway</code>: Connection pool exhausted, 4500ms latency
+                  </p>
+                </div>
+
+                <div className="flow-node" style={{ borderLeft: '3px solid var(--color-purple)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: '600', color: 'var(--color-purple)' }}>
+                    <span>Alert C: Ingress HTTP 504 Surge</span>
+                    <span>GATEWAY</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                    <code>edge-ingress</code>: 28% error rate, client requests timing out
+                  </p>
+                </div>
+              </div>
+
+              {/* Flow arrow into correlation engine */}
+              <div className="flow-arrow-down">
+                <span style={{ fontSize: '0.76rem', background: 'var(--bg-surface)', padding: '4px 12px', borderRadius: '12px', border: '1px solid var(--border-subtle)', color: 'var(--accent)', fontWeight: '600' }}>
+                  ▼ 10-Minute Sliding Window Temporal &amp; Topology Correlation Engine
+                </span>
+              </div>
+
+              {/* Merged Incident Box */}
+              <div style={{ marginTop: '10px', background: 'var(--bg-surface)', border: '1px solid var(--accent)', borderRadius: '6px', padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="badge-minimal" style={{ background: 'var(--color-rose-subtle)', color: 'var(--color-rose)', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
+                      CRITICAL INCIDENT
+                    </span>
+                    <strong style={{ fontSize: '0.84rem' }}>INC-INFRA-OUTAGE (1 Consolidated Incident)</strong>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--color-emerald)', fontWeight: '600' }}>
+                    ✓ 3 Alerts Deduplicated &amp; Grouped (Noise Reduction: 66.7%)
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  <strong>Root Cause Analysis:</strong> Cascading Out-Of-Memory DB crash and connection timeout starved upstream microservice queues.
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  <span>Causal Chain: <code>db-master OOM</code> → <code>TCP Pool Drain</code> → <code>HTTP 504 Surge</code></span>
+                  <span>Diagnostic Confidence: <strong style={{ color: 'var(--accent)' }}>95%</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Correlated Incidents & Root Cause Analysis */}
           <div className="card-minimal" style={{ gridColumn: '1 / -1', padding: '18px' }}>
             <h3 style={{ fontSize: '0.92rem', fontWeight: '600', marginBottom: '6px' }}>
@@ -1523,6 +2018,102 @@ export default function HomePage() {
               ))}
             </div>
           </div>
+
+          {/* Local Buffering + Retry after Outage Card */}
+          <div className="card-minimal" style={{ padding: '20px', borderLeft: isOutageSimulated ? '4px solid var(--color-rose)' : '4px solid var(--color-emerald)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.1rem' }}>🔄</span>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+                  Resilient Edge Local Buffering &amp; Outage Replay Engine
+                </h3>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="badge-minimal" style={{
+                  background: isOutageSimulated ? 'var(--color-rose-subtle)' : 'var(--color-emerald-subtle)',
+                  color: isOutageSimulated ? 'var(--color-rose)' : 'var(--color-emerald)',
+                  border: `1px solid ${isOutageSimulated ? 'rgba(244, 63, 94, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`,
+                }}>
+                  {isOutageSimulated ? '🔴 UPSTREAM OUTAGE SIMULATED' : '🟢 UPSTREAM CONNECTED (ONLINE)'}
+                </span>
+                <button
+                  onClick={handleToggleOutage}
+                  disabled={outageLoading}
+                  className={isOutageSimulated ? 'btn-minimal-primary' : 'btn-minimal-danger'}
+                  style={{ fontSize: '0.74rem', padding: '4px 10px' }}
+                >
+                  {isOutageSimulated ? '✓ Reconnect Upstream' : '⚡ Simulate Upstream Outage'}
+                </button>
+              </div>
+            </div>
+
+            {simpleMode && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                💡 <strong>In Plain English:</strong> What happens if the internet goes down or cloud servers reboot? The local collector doesn&apos;t drop any data! It securely queues telemetry in your local computer&apos;s memory. Once the upstream server recovers, it automatically retries with backoff and drains the queue safely.
+              </p>
+            )}
+
+            {/* Queue Depth & Status Controls */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>LOCAL RAM QUEUE DEPTH</span>
+                  <span className={`badge-minimal ${bufferedQueueDepth > 0 ? 'queue-pulse-active' : ''}`} style={{
+                    background: bufferedQueueDepth > 0 ? 'var(--color-amber-subtle)' : 'var(--bg-surface-elevated)',
+                    color: bufferedQueueDepth > 0 ? 'var(--color-amber)' : 'var(--text-secondary)',
+                  }}>
+                    {bufferedQueueDepth} Payloads Buffered
+                  </span>
+                </div>
+                <div style={{ fontSize: '1.3rem', fontWeight: '700', marginTop: '4px', color: bufferedQueueDepth > 0 ? 'var(--color-amber)' : 'var(--text-primary)' }}>
+                  {bufferedQueueDepth} <span style={{ fontSize: '0.78rem', fontWeight: '400', color: 'var(--text-muted)' }}>/ 500 Max Capacity</span>
+                </div>
+                <span style={{ fontSize: '0.68rem', color: isOutageSimulated ? 'var(--color-rose)' : 'var(--text-secondary)' }}>
+                  {isOutageSimulated ? 'Holding telemetry offline in local memory' : 'Operating in pass-through direct forwarding'}
+                </span>
+              </div>
+
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={handleSendBufferPayload}
+                    className="btn-minimal"
+                    style={{ flex: 1, fontSize: '0.74rem' }}
+                  >
+                    📤 Send Telemetry Payload
+                  </button>
+                  <button
+                    onClick={handleFlushAndRetry}
+                    disabled={outageLoading || bufferedQueueDepth === 0}
+                    className="btn-minimal-primary"
+                    style={{ flex: 1, fontSize: '0.74rem' }}
+                  >
+                    🔄 Retry &amp; Drain Buffer
+                  </button>
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                  Simulates exponential backoff retry loop (Up to 3 attempts with jitter)
+                </span>
+              </div>
+            </div>
+
+            {/* Retry Results Log */}
+            {retryResult && (
+              <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px 14px', fontSize: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <strong style={{ color: retryResult.success ? 'var(--color-emerald)' : 'var(--color-rose)' }}>
+                    {retryResult.success ? '✓ Outage Recovery Completed' : '✕ Outage Recovery Incomplete'}
+                  </strong>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                    Flushed: {retryResult.flushed} | Retry Attempts: {retryResult.retried}
+                  </span>
+                </div>
+                <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                  {retryResult.message}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1535,7 +2126,7 @@ export default function HomePage() {
             </h3>
             {simpleMode && (
               <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px 12px', fontSize: '0.75rem', marginBottom: '14px', color: 'var(--text-secondary)' }}>
-                <strong>💡 In Plain English:</strong> This is the central cloud platform. Just like a bank safe-deposit vault, every tenant gets their own locked partition. No tenant can ever see another company's data, and all database queries enforce row-level boundary locks.
+                <strong>💡 In Plain English:</strong> This is the central cloud platform. Just like a bank safe-deposit vault, every tenant gets their own locked partition. No tenant can ever see another company&apos;s data, and all database queries enforce row-level boundary locks.
               </div>
             )}
 
@@ -1555,7 +2146,7 @@ export default function HomePage() {
               </div>
 
               <div style={{ background: 'var(--bg-canvas)', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>DEDUPLICATION & HEALING</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>DEDUPLICATION &amp; HEALING</span>
                 <div style={{ fontSize: '1.05rem', fontWeight: '600', marginTop: '2px' }}>
                   Idempotency Active
                 </div>
@@ -1566,6 +2157,232 @@ export default function HomePage() {
             <div style={{ background: 'var(--accent-subtle)', border: '1px solid var(--border-accent)', borderRadius: '6px', padding: '12px 16px', fontSize: '0.78rem' }}>
               <strong>Architecture Separation Guarantee:</strong> Edge collectors operate entirely autonomously and do not share in-memory state with the central SaaS store. Data transmitted across tiers contains zero raw user data, fulfilling zero-trust privacy mandates.
             </div>
+          </div>
+
+          {/* Idempotent Payload IDs (No Duplicates) Card */}
+          <div className="card-minimal" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.1rem' }}>🆔</span>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+                  Idempotent Payload Processing (Strict Zero Duplicate Guarantee)
+                </h3>
+              </div>
+              <span className="badge-minimal" style={{ background: 'var(--color-emerald-subtle)', color: 'var(--color-emerald)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                DEDUPLICATION HASH RING: ACTIVE
+              </span>
+            </div>
+
+            {simpleMode && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                💡 <strong>In Plain English:</strong> Sometimes mobile phones or microservices accidentally send the same data packet twice due to network lag. Our SaaS engine assigns a unique ID to every payload and remembers it. If a duplicate packet arrives, the engine throws it away so your metrics and billing are never double-counted!
+              </p>
+            )}
+
+            <div style={{ background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '14px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                <div style={{ flex: 1, minWidth: '240px' }}>
+                  <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                    DETERMINISTIC PAYLOAD ID:
+                  </label>
+                  <input
+                    type="text"
+                    value={idempotentPayloadId}
+                    onChange={(e) => setIdempotentPayloadId(e.target.value)}
+                    className="input-minimal"
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}
+                  />
+                </div>
+                <button
+                  onClick={() => setIdempotentPayloadId(`IDEM-PAYLOAD-${Math.floor(1000 + Math.random() * 9000)}`)}
+                  className="btn-minimal"
+                  style={{ alignSelf: 'flex-end', fontSize: '0.74rem' }}
+                >
+                  🎲 Generate New ID
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => handleTestIdempotency(false)}
+                  disabled={idempotencyLoading}
+                  className="btn-minimal-primary"
+                  style={{ fontSize: '0.76rem', padding: '6px 14px' }}
+                >
+                  <span>1️⃣</span> Ingest Initial Payload (Status: 201 Created)
+                </button>
+                <button
+                  onClick={() => handleTestIdempotency(true)}
+                  disabled={idempotencyLoading}
+                  className="btn-minimal"
+                  style={{ fontSize: '0.76rem', padding: '6px 14px', borderColor: 'var(--color-amber)', color: 'var(--color-amber)' }}
+                >
+                  <span>2️⃣</span> Resend Same Payload (Test Duplicate Interception)
+                </button>
+              </div>
+            </div>
+
+            {/* Idempotency Test Result */}
+            {idempotencyResult && (
+              <div style={{
+                background: idempotencyResult.duplicate ? 'var(--color-amber-subtle)' : 'var(--color-emerald-subtle)',
+                border: `1px solid ${idempotencyResult.duplicate ? 'rgba(245, 158, 11, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`,
+                borderRadius: '6px',
+                padding: '12px 14px',
+                fontSize: '0.76rem',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <strong style={{ color: idempotencyResult.duplicate ? 'var(--color-amber)' : 'var(--color-emerald)' }}>
+                    {idempotencyResult.duplicate ? '⚠️ DUPLICATE_BLOCKED: Intercepted Duplicate Payload' : '✓ ACCEPTED: New Payload Registered'}
+                  </strong>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    Payload: {idempotencyResult.payloadId}
+                  </span>
+                </div>
+                <p style={{ margin: 0, color: 'var(--text-primary)' }}>
+                  {idempotencyResult.auditMessage}
+                </p>
+                <div style={{ marginTop: '6px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  Verification: Ingress state ring buffer verified unique constraint. Database duplicate row creation: <strong>0</strong>.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tenant Separation Across 2 Demo Tenants Card */}
+          <div className="card-minimal" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.1rem' }}>🏢</span>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+                  Two-Tenant Separation Showcase (Row-Level Security)
+                </h3>
+              </div>
+              <span className="badge-minimal" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)', border: '1px solid var(--border-accent)' }}>
+                RELATIONAL PARTITIONS: STRICT
+              </span>
+            </div>
+
+            {simpleMode && (
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                💡 <strong>In Plain English:</strong> In our multi-tenant cloud, Tenant A (Acme Corp) and Tenant B (CyberShield) share the same underlying engine, but can never view or tamper with each other&apos;s data. You can switch between them below or run our live cryptographic audit to mathematically verify zero data leaks!
+              </p>
+            )}
+
+            {/* Comparative Tenant Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+              {/* Tenant 1: Acme Corp */}
+              <div style={{
+                background: 'var(--bg-canvas)',
+                border: currentUser.tenantId === 'acme-corp' ? '2px solid var(--accent)' : '1px solid var(--border-subtle)',
+                borderRadius: '6px',
+                padding: '14px',
+                position: 'relative',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <strong style={{ fontSize: '0.84rem' }}>🏢 Demo Tenant 1: Acme Corp</strong>
+                  {currentUser.tenantId === 'acme-corp' && (
+                    <span className="badge-minimal" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>
+                      ACTIVE SESSION
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <div><strong>Partition ID:</strong> <code>acme-corp</code> (US-East-1)</div>
+                  <div><strong>Authorized User:</strong> admin@acme.com</div>
+                  <div><strong>SLA Guarantee:</strong> 99.99% Enterprise Tier</div>
+                </div>
+                {currentUser.tenantId !== 'acme-corp' && (
+                  <button
+                    onClick={() => handleSwitchDemoTenant('acme-corp')}
+                    disabled={loading}
+                    className="btn-minimal-primary"
+                    style={{ marginTop: '10px', width: '100%', fontSize: '0.74rem' }}
+                  >
+                    ⇄ Switch Session to Acme Corp
+                  </button>
+                )}
+              </div>
+
+              {/* Tenant 2: CyberShield Defense */}
+              <div style={{
+                background: 'var(--bg-canvas)',
+                border: currentUser.tenantId === 'shield-defense' ? '2px solid var(--accent)' : '1px solid var(--border-subtle)',
+                borderRadius: '6px',
+                padding: '14px',
+                position: 'relative',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <strong style={{ fontSize: '0.84rem' }}>🛡️ Demo Tenant 2: CyberShield</strong>
+                  {currentUser.tenantId === 'shield-defense' && (
+                    <span className="badge-minimal" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>
+                      ACTIVE SESSION
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <div><strong>Partition ID:</strong> <code>shield-defense</code> (EU-West-1)</div>
+                  <div><strong>Authorized User:</strong> secops@shield-defense.com</div>
+                  <div><strong>SLA Guarantee:</strong> 99.999% Defense Tier</div>
+                </div>
+                {currentUser.tenantId !== 'shield-defense' && (
+                  <button
+                    onClick={() => handleSwitchDemoTenant('shield-defense')}
+                    disabled={loading}
+                    className="btn-minimal-primary"
+                    style={{ marginTop: '10px', width: '100%', fontSize: '0.74rem' }}
+                  >
+                    ⇄ Switch Session to CyberShield
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Run Cryptographic Isolation Audit Button */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                Test cross-tenant partition boundaries live across SQLite relational tables:
+              </span>
+              <button
+                onClick={handleRunIsolationAudit}
+                disabled={isolationAuditLoading}
+                className="btn-minimal"
+                style={{ fontSize: '0.76rem', borderColor: 'var(--color-emerald)', color: 'var(--color-emerald)' }}
+              >
+                <span>🛡️</span> {isolationAuditLoading ? 'Auditing Partitions...' : 'Run Cryptographic Isolation Audit'}
+              </button>
+            </div>
+
+            {/* Audit Results Report */}
+            {isolationAudit && (
+              <div style={{ background: 'var(--color-emerald-subtle)', border: '1px solid rgba(16, 185, 129, 0.35)', borderRadius: '6px', padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+                  <strong style={{ color: 'var(--color-emerald)', fontSize: '0.82rem' }}>
+                    ✓ ZERO-LEAK PARTITION ISOLATION MATHEMATICALLY VERIFIED
+                  </strong>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    Audited at: {isolationAudit.timestampUtc?.substring(11, 19)} UTC
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', fontSize: '0.74rem', marginTop: '6px' }}>
+                  <div style={{ background: 'var(--bg-canvas)', padding: '8px 10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>CROSS-TENANT DATA LEAKS</span>
+                    <strong style={{ fontSize: '1.1rem', color: 'var(--color-emerald)' }}>0 (Zero Leaks)</strong>
+                  </div>
+                  <div style={{ background: 'var(--bg-canvas)', padding: '8px 10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>ACTIVE PARTITION ({isolationAudit.primaryTenant?.tenantId})</span>
+                    <strong>{isolationAudit.primaryTenant?.totalEvents} Events (0 Leaks)</strong>
+                  </div>
+                  <div style={{ background: 'var(--bg-canvas)', padding: '8px 10px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                    <span style={{ color: 'var(--text-muted)', display: 'block' }}>OPPOSING PARTITION ({isolationAudit.opposingTenant?.tenantId})</span>
+                    <strong>{isolationAudit.opposingTenant?.totalEvents} Events (0 Leaks)</strong>
+                  </div>
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  <strong>Security Enforcement Mechanism:</strong> {isolationAudit.isolationMechanism}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

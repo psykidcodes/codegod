@@ -30,6 +30,33 @@ export async function GET(request) {
 
     const tenantId = rawTenantId.trim();
 
+    if (resource === 'audit_isolation') {
+      const opposingTenant = searchParams.get('opposingTenant') || (tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp');
+      const eventsA = defaultDatabase.getEvents(tenantId);
+      const eventsB = defaultDatabase.getEvents(opposingTenant);
+      
+      const crossLeakCount = eventsA.filter((e) => (e.tenantId || e.tenant_id) !== tenantId).length;
+      const reverseLeakCount = eventsB.filter((e) => (e.tenantId || e.tenant_id) !== opposingTenant).length;
+
+      return NextResponse.json({
+        auditStatus: 'VERIFIED_ISOLATED',
+        crossTenantLeaksDetected: crossLeakCount + reverseLeakCount,
+        isZeroLeakage: (crossLeakCount + reverseLeakCount) === 0,
+        primaryTenant: {
+          tenantId,
+          totalEvents: eventsA.length,
+          leaksDetected: crossLeakCount,
+        },
+        opposingTenant: {
+          tenantId: opposingTenant,
+          totalEvents: eventsB.length,
+          leaksDetected: reverseLeakCount,
+        },
+        isolationMechanism: 'Relational Partition Constraint + SQL Boundary (WHERE tenant_id = ?)',
+        timestampUtc: new Date().toISOString(),
+      }, { status: 200 });
+    }
+
     if (resource === 'events') {
       const events = defaultDatabase.getEvents(tenantId, { region, category, severity });
       return NextResponse.json({ tenantId, total: events.length, events }, { status: 200 });

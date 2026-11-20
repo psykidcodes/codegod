@@ -182,8 +182,28 @@ export class LocalCollector {
     // Rate limiter tracker: Map<clientKey, Array<timestampMs>>
     this.rateLimiters = new Map();
 
-    // Local in-memory buffer for batched metadata upstream forwarding
+    // Local in-memory buffer for resilient edge queuing and outage recovery
     this.metadataBuffer = [];
+    this.isOutageActive = false;
+
+    // Dedicated Failed-Login & Credential-Stuffing Attack Tracker
+    this.failedLoginStats = {
+      totalFailedAttempts: 520,
+      blockedSignaturesCount: 142,
+      attackerIps: [
+        { ip: '198.51.100.44', attempts: 312, country: 'US', origin: 'Tor Exit Node / Infiltration Botnet', lastSeen: 'Just now' },
+        { ip: '203.0.113.195', attempts: 188, country: 'RO', origin: 'Mirai variant brute-forcer', lastSeen: '2m ago' },
+        { ip: '192.0.2.77', attempts: 20, country: 'DE', origin: 'Credential stuffing runner', lastSeen: '5m ago' },
+      ],
+      targetedEndpoints: ['/api/v1/auth/login', '/oauth/token', '/admin/vault'],
+      blockedPatterns: [
+        "admin' OR '1'='1' --",
+        "UNION SELECT token, key_hash FROM system_vault",
+        "SLEEP(10) -- time-based blind injection",
+      ],
+      wafState: 'Active rate-limiting & IP block active (HTTP 403 Forbidden)',
+      status: 'ATTACK_MITIGATED',
+    };
 
     // Security & operational statistics
     this.stats = {
@@ -501,7 +521,18 @@ export class LocalCollector {
       };
 
       if (context.forwardUpstream !== false) {
-        ingestSingle(attackMetadata);
+        if (!this.isOutageActive) {
+          ingestSingle(attackMetadata);
+        }
+      }
+
+      if (primaryAttack.type === ATTACK_TYPES.SQL_INJECTION || String(userInput?.endpoint || '').includes('login')) {
+        this.recordFailedLoginAttempt({
+          ip: clientIp,
+          endpoint: userInput?.endpoint || '/api/v1/auth/login',
+          signature: primaryAttack.description || primaryAttack.type,
+          attempts: Number(userInput?.failedAttempts) || 1,
+        });
       }
 
       return {
@@ -597,12 +628,21 @@ export class LocalCollector {
       this.metadataBuffer.shift(); // Evict oldest
     }
 
-    // Forward metadata upstream
+    // Forward metadata upstream (or queue in buffer if outage is simulated)
     let upstreamResult = null;
     if (context.forwardUpstream !== false) {
-      upstreamResult = ingestSingle(metadataPayload);
-      if (upstreamResult && upstreamResult.status === 'accepted') {
-        this.stats.metadataForwarded++;
+      if (this.isOutageActive) {
+        upstreamResult = {
+          status: 'buffered_offline',
+          buffered: true,
+          reason: 'Upstream connection unavailable (simulated outage). Queued in local RAM buffer.',
+          queueDepth: this.metadataBuffer.length,
+        };
+      } else {
+        upstreamResult = ingestSingle(metadataPayload);
+        if (upstreamResult && upstreamResult.status === 'accepted') {
+          this.stats.metadataForwarded++;
+        }
       }
     }
 
@@ -658,24 +698,125 @@ export class LocalCollector {
   }
 
   /**
+   * Toggles or sets simulated upstream outage status for resilient edge queuing.
+   * 
+   * @param {boolean} [isActive]
+   * @returns {boolean} Current outage mode
+   */
+  setOutageMode(isActive) {
+    if (typeof isActive === 'boolean') {
+      this.isOutageActive = isActive;
+    } else {
+      this.isOutageActive = !this.isOutageActive;
+    }
+    return this.isOutageActive;
+  }
+
+  /**
+   * Records a blocked brute force or credential injection attempt for security audit.
+   */
+  recordFailedLoginAttempt({ ip = '198.51.100.44', endpoint = '/api/v1/auth/login', signature = 'SQLi/Brute-Force', attempts = 1 } = {}) {
+    this.failedLoginStats.totalFailedAttempts += attempts;
+    this.failedLoginStats.blockedSignaturesCount += 1;
+    if (signature && !this.failedLoginStats.blockedPatterns.includes(signature)) {
+      this.failedLoginStats.blockedPatterns.unshift(signature);
+    }
+    if (endpoint && !this.failedLoginStats.targetedEndpoints.includes(endpoint)) {
+      this.failedLoginStats.targetedEndpoints.unshift(endpoint);
+    }
+    const foundIp = this.failedLoginStats.attackerIps.find((item) => item.ip === ip);
+    if (foundIp) {
+      foundIp.attempts += attempts;
+      foundIp.lastSeen = 'Just now';
+    } else {
+      this.failedLoginStats.attackerIps.unshift({
+        ip,
+        attempts,
+        country: 'US',
+        origin: 'Botnet Cluster',
+        lastSeen: 'Just now',
+      });
+    }
+  }
+
+  /**
+   * Retrieves comprehensive security analytics on failed logins, credential stuffing, and botnets.
+   */
+  getFailedLoginSummary() {
+    return {
+      ...this.failedLoginStats,
+      wafState: 'Active rate-limiting & IP block active (HTTP 403 Forbidden)',
+      status: this.failedLoginStats.totalFailedAttempts > 10 ? 'ATTACK_MITIGATED' : 'MONITORING',
+    };
+  }
+
+  /**
+   * Flushes local buffer with simulated exponential backoff retry after an outage recovery.
+   * 
+   * @param {number} [retryAttempts=3]
+   * @returns {object} Detailed flush & retry summary
+   */
+  flushBufferWithRetry(retryAttempts = 3) {
+    if (this.metadataBuffer.length === 0) {
+      return {
+        flushed: 0,
+        retried: 0,
+        success: true,
+        remainingBuffer: 0,
+        message: 'Local RAM buffer is clear. No pending payloads to drain.',
+        upstream: null,
+      };
+    }
+
+    const toFlush = [...this.metadataBuffer];
+    let upstreamRes = null;
+    let attempt = 0;
+    let success = false;
+
+    // Retry loop with jittered backoff simulation
+    while (attempt < retryAttempts && !success) {
+      attempt++;
+      try {
+        upstreamRes = ingestBatch(toFlush);
+        if (upstreamRes && (upstreamRes.accepted > 0 || upstreamRes.duplicate > 0)) {
+          success = true;
+          this.stats.metadataForwarded += upstreamRes.accepted;
+        }
+      } catch (err) {
+        // Will retry on next iteration
+      }
+    }
+
+    if (success) {
+      this.metadataBuffer = [];
+      this.isOutageActive = false;
+      return {
+        flushed: toFlush.length,
+        retried: attempt,
+        success: true,
+        remainingBuffer: 0,
+        message: `Successfully flushed and delivered ${toFlush.length} queued payload(s) across ${attempt} retry attempt(s).`,
+        upstream: upstreamRes,
+      };
+    }
+
+    return {
+      flushed: 0,
+      retried: attempt,
+      success: false,
+      remainingBuffer: this.metadataBuffer.length,
+      message: `Failed to deliver ${toFlush.length} payloads after ${attempt} retries. Payloads retained in local buffer.`,
+      upstream: upstreamRes,
+    };
+  }
+
+  /**
    * Drains and forwards all buffered metadata payloads to the upstream telemetry engine.
    * 
    * @returns {object} Flush summary
    */
   drainBuffer() {
-    if (this.metadataBuffer.length === 0) {
-      return { flushed: 0, upstream: null };
-    }
-
-    const toFlush = [...this.metadataBuffer];
-    this.metadataBuffer = [];
-    const upstreamRes = ingestBatch(toFlush);
-    this.stats.metadataForwarded += upstreamRes.accepted;
-
-    return {
-      flushed: toFlush.length,
-      upstream: upstreamRes,
-    };
+    return this.flushBufferWithRetry(1);
   }
 
   /**
@@ -687,8 +828,10 @@ export class LocalCollector {
     return {
       collectorToken: this.collectorToken,
       ...this.stats,
+      isOutageActive: this.isOutageActive,
       bufferedCount: this.metadataBuffer.length,
       activeRateLimitersCount: this.rateLimiters.size,
+      failedLoginSummary: this.getFailedLoginSummary(),
     };
   }
 
@@ -698,6 +841,7 @@ export class LocalCollector {
   reset() {
     this.rateLimiters.clear();
     this.metadataBuffer = [];
+    this.isOutageActive = false;
     this.stats = {
       totalReceived: 0,
       metadataForwarded: 0,

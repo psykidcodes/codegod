@@ -208,6 +208,14 @@ export class TelemetryDatabase {
         slaTarget: '99.99%',
         status: 'active',
       },
+      {
+        tenantId: 'shield-defense',
+        name: 'CyberShield Defense Systems',
+        tier: 'defense',
+        region: 'eu-west-1',
+        slaTarget: '99.999%',
+        status: 'active',
+      },
     ];
 
     const stmt = this.db.prepare(`
@@ -264,6 +272,28 @@ export class TelemetryDatabase {
           tenantId: mobileAccount.tenantId,
           identifier: mobileAccount.identifier,
           identifierType: mobileAccount.identifierType,
+          passwordHash: hash,
+          salt,
+        });
+      }
+
+      // Seed second demo tenant user: shield-defense
+      const shieldAccount = {
+        userId: 'usr-shield-secops',
+        tenantId: 'shield-defense',
+        identifier: 'secops@shield-defense.com',
+        identifierType: 'email',
+        password: 'Password123!',
+      };
+
+      const existingShield = this.getUserByIdentifier(shieldAccount.identifier);
+      if (!existingShield) {
+        const { salt, hash } = hashPassword(shieldAccount.password);
+        this.createUser({
+          userId: shieldAccount.userId,
+          tenantId: shieldAccount.tenantId,
+          identifier: shieldAccount.identifier,
+          identifierType: shieldAccount.identifierType,
           passwordHash: hash,
           salt,
         });

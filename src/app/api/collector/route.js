@@ -27,6 +27,34 @@ function getClientIp(request) {
 export async function POST(request) {
   try {
     const clientIp = getClientIp(request);
+    let action = null;
+    if (request.url) {
+      try {
+        const { searchParams } = new URL(request.url);
+        action = searchParams.get('action');
+      } catch {}
+    }
+
+    // Action 1: Toggle simulated upstream outage
+    if (action === 'toggle_outage') {
+      let body = {};
+      try { body = await request.json(); } catch {}
+      const isOutageActive = defaultCollector.setOutageMode(body.outage);
+      return NextResponse.json({
+        status: 'success',
+        isOutageActive,
+        bufferedCount: defaultCollector.metadataBuffer.length,
+        message: isOutageActive
+          ? 'Simulated upstream outage activated. Outbound telemetry will buffer locally in RAM.'
+          : 'Upstream connection restored. Ready to retry and drain local buffer.',
+      }, { status: 200 });
+    }
+
+    // Action 2: Drain & Retry local buffer after outage recovery
+    if (action === 'flush_buffer' || action === 'retry_buffer') {
+      const flushResult = defaultCollector.flushBufferWithRetry();
+      return NextResponse.json(flushResult, { status: 200 });
+    }
 
     // 1. Parse JSON safely
     let body;
@@ -44,6 +72,21 @@ export async function POST(request) {
         { error: 'Payload must be a JSON object or array' },
         { status: 400 }
       );
+    }
+
+    // Action 3: Dedicated Idempotency verification test
+    if (action === 'test_idempotency') {
+      const result = defaultCollector.processUserInput(body, { clientIp });
+      const isDuplicate = result.upstreamResult?.status === 'duplicate' || result.upstreamResult?.status === 'duplicate_blocked' || result.upstreamResult?.duplicate === true;
+      return NextResponse.json({
+        status: isDuplicate ? 'duplicate_blocked' : 'accepted',
+        payloadId: result.payloadId,
+        duplicate: isDuplicate,
+        upstreamResult: result.upstreamResult,
+        auditMessage: isDuplicate
+          ? `Deterministic payload ${result.payloadId} blocked as duplicate. Zero duplicate database rows written.`
+          : `Payload ${result.payloadId} successfully accepted and ingested.`,
+      }, { status: isDuplicate ? 200 : 201 });
     }
 
     // 2. Handle batch vs single
