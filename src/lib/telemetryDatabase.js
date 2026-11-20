@@ -15,6 +15,7 @@ import {
   performRootCauseAnalysis,
   generateRecommendations,
 } from './aiopsEngine.js';
+import { hashPassword } from './auth.js';
 
 export const SCENARIO_TYPES = Object.freeze({
   SPIKES: 'spikes',
@@ -136,7 +137,290 @@ export class TelemetryDatabase {
         incident_id TEXT,
         created_at_utc TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS tenants (
+        tenant_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        tier TEXT NOT NULL DEFAULT 'enterprise',
+        region TEXT NOT NULL DEFAULT 'us-east-1',
+        sla_target TEXT NOT NULL DEFAULT '99.99%',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at_utc TEXT NOT NULL,
+        metadata_json TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS users (
+        user_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        identifier TEXT UNIQUE NOT NULL,
+        identifier_type TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        created_at_utc TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_users_identifier ON users (identifier);
+      CREATE INDEX IF NOT EXISTS idx_users_tenant ON users (tenant_id);
     `);
+
+    this.seedDefaultTenants();
+    this.seedDefaultUsers();
+  }
+
+  /**
+   * Seeds realistic default enterprise tenants if not already present.
+   */
+  seedDefaultTenants() {
+    const defaultTenants = [
+      {
+        tenantId: 'acme-corp',
+        name: 'Acme Global Infrastructure',
+        tier: 'enterprise',
+        region: 'us-east-1',
+        slaTarget: '99.99%',
+        status: 'active',
+      },
+      {
+        tenantId: 'fintech-cloud',
+        name: 'FinTech High-Frequency Payments',
+        tier: 'enterprise',
+        region: 'eu-west-1',
+        slaTarget: '99.999%',
+        status: 'active',
+      },
+      {
+        tenantId: 'cyber-shield',
+        name: 'CyberShield Zero-Trust Grid',
+        tier: 'pro',
+        region: 'us-west-2',
+        slaTarget: '99.9%',
+        status: 'active',
+      },
+      {
+        tenantId: 'quantum-bio',
+        name: 'Quantum Bio-Vault Systems',
+        tier: 'enterprise',
+        region: 'ap-southeast-1',
+        slaTarget: '99.99%',
+        status: 'active',
+      },
+    ];
+
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO tenants (tenant_id, name, tier, region, sla_target, status, created_at_utc, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const now = new Date().toISOString();
+    for (const t of defaultTenants) {
+      stmt.run(t.tenantId, t.name, t.tier, t.region, t.slaTarget, t.status, now, '{}');
+    }
+  }
+
+  /**
+   * Seeds default demo accounts for testing authentication.
+   */
+  seedDefaultUsers() {
+    try {
+      const demoAccount = {
+        userId: 'usr-acme-admin',
+        tenantId: 'acme-corp',
+        identifier: 'admin@acme.com',
+        identifierType: 'email',
+        password: 'Password123!',
+      };
+
+      const existing = this.getUserByIdentifier(demoAccount.identifier);
+      if (!existing) {
+        const { salt, hash } = hashPassword(demoAccount.password);
+        this.createUser({
+          userId: demoAccount.userId,
+          tenantId: demoAccount.tenantId,
+          identifier: demoAccount.identifier,
+          identifierType: demoAccount.identifierType,
+          passwordHash: hash,
+          salt,
+        });
+      }
+
+      // Also seed a mobile account
+      const mobileAccount = {
+        userId: 'usr-acme-mobile',
+        tenantId: 'acme-corp',
+        identifier: '+15551234567',
+        identifierType: 'mobile',
+        password: 'Password123!',
+      };
+
+      const existingMobile = this.getUserByIdentifier(mobileAccount.identifier);
+      if (!existingMobile) {
+        const { salt, hash } = hashPassword(mobileAccount.password);
+        this.createUser({
+          userId: mobileAccount.userId,
+          tenantId: mobileAccount.tenantId,
+          identifier: mobileAccount.identifier,
+          identifierType: mobileAccount.identifierType,
+          passwordHash: hash,
+          salt,
+        });
+      }
+    } catch {
+      // Ignore if already seeded
+    }
+  }
+
+  /**
+   * Registers a new tenant user with salted password hash.
+   * 
+   * @param {object} user 
+   * @returns {object}
+   */
+  createUser(user) {
+    const stmt = this.db.prepare(`
+      INSERT INTO users (user_id, tenant_id, identifier, identifier_type, password_hash, salt, created_at_utc)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const nowUtc = user.createdAtUtc || new Date().toISOString();
+    stmt.run(
+      user.userId,
+      user.tenantId,
+      user.identifier,
+      user.identifierType,
+      user.passwordHash,
+      user.salt,
+      nowUtc
+    );
+
+    return {
+      userId: user.userId,
+      tenantId: user.tenantId,
+      identifier: user.identifier,
+      identifierType: user.identifierType,
+      createdAtUtc: nowUtc,
+    };
+  }
+
+  /**
+   * Retrieves a tenant user record by their email or mobile identifier.
+   * 
+   * @param {string} identifier 
+   * @returns {object|null}
+   */
+  getUserByIdentifier(identifier) {
+    if (!identifier) return null;
+    const row = this.db.prepare('SELECT * FROM users WHERE identifier = ?').get(identifier);
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      tenantId: row.tenant_id,
+      identifier: row.identifier,
+      identifierType: row.identifier_type,
+      passwordHash: row.password_hash,
+      salt: row.salt,
+      createdAtUtc: row.created_at_utc,
+    };
+  }
+
+  /**
+   * Retrieves a tenant user by user ID.
+   * 
+   * @param {string} userId 
+   * @returns {object|null}
+   */
+  getUserById(userId) {
+    if (!userId) return null;
+    const row = this.db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId);
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      tenantId: row.tenant_id,
+      identifier: row.identifier,
+      identifierType: row.identifier_type,
+      passwordHash: row.password_hash,
+      salt: row.salt,
+      createdAtUtc: row.created_at_utc,
+    };
+  }
+
+  /**
+   * Dynamically registers or provisions a new tenant partition.
+   * 
+   * @param {object} tenant 
+   * @returns {object} Registered tenant
+   */
+  registerTenant(tenant) {
+    if (!tenant || !tenant.tenantId || typeof tenant.tenantId !== 'string') {
+      throw new Error('Valid tenantId is required to register tenant');
+    }
+    const normalizedId = tenant.tenantId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    const name = tenant.name || normalizedId;
+    const tier = tenant.tier || 'enterprise';
+    const region = tenant.region || 'us-east-1';
+    const slaTarget = tenant.slaTarget || '99.99%';
+    const status = tenant.status || 'active';
+    const nowUtc = new Date().toISOString();
+    const metadataJson = JSON.stringify(tenant.metadata || {});
+
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO tenants (
+        tenant_id, name, tier, region, sla_target, status, created_at_utc, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(normalizedId, name, tier, region, slaTarget, status, nowUtc, metadataJson);
+
+    return {
+      tenantId: normalizedId,
+      name,
+      tier,
+      region,
+      slaTarget,
+      status,
+      createdAtUtc: nowUtc,
+      metadata: tenant.metadata || {},
+    };
+  }
+
+  /**
+   * Retrieves all registered dynamic tenants with their tier, region, and SLA.
+   * 
+   * @returns {Array<object>}
+   */
+  getTenants() {
+    const rows = this.db.prepare('SELECT * FROM tenants ORDER BY created_at_utc ASC').all();
+    return rows.map((r) => ({
+      tenantId: r.tenant_id,
+      name: r.name,
+      tier: r.tier,
+      region: r.region,
+      slaTarget: r.sla_target,
+      status: r.status,
+      createdAtUtc: r.created_at_utc,
+      metadata: JSON.parse(r.metadata_json || '{}'),
+    }));
+  }
+
+  /**
+   * Retrieves a specific registered tenant.
+   * 
+   * @param {string} tenantId 
+   * @returns {object|null}
+   */
+  getTenant(tenantId) {
+    if (!tenantId) return null;
+    const row = this.db.prepare('SELECT * FROM tenants WHERE tenant_id = ?').get(tenantId.trim().toLowerCase());
+    if (!row) return null;
+    return {
+      tenantId: row.tenant_id,
+      name: row.name,
+      tier: row.tier,
+      region: row.region,
+      slaTarget: row.sla_target,
+      status: row.status,
+      createdAtUtc: row.created_at_utc,
+      metadata: JSON.parse(row.metadata_json || '{}'),
+    };
   }
 
   /**
