@@ -470,6 +470,19 @@ export function resetTenantStore() {
   tenantStore.clear();
 }
 
+/**
+ * Step 2: Built-in AIOps Query Helper
+ * Executes end-to-end AIOps intelligence analysis against an isolated tenant partition.
+ * 
+ * @param {string} tenantId
+ * @param {string|null} [region=null]
+ * @returns {Promise<object>} Full AIOps intelligence report
+ */
+export async function queryTenantAiops(tenantId, region = null) {
+  const { analyzeTenantOps } = await import('./aiopsEngine.js');
+  return analyzeTenantOps(tenantId, { region });
+}
+
 export default {
   ALLOW_LISTED_KEYS,
   VALID_CATEGORIES,
@@ -484,4 +497,5 @@ export default {
   ingestBatch,
   queryTenant,
   resetTenantStore,
+  queryTenantAiops,
 };

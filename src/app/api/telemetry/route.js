@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server.js';
 import { queryTenant, TenantIsolationError } from '../../../lib/saasEngine.js';
+import { analyzeTenantOps } from '../../../lib/aiopsEngine.js';
 
 /**
  * GET /api/telemetry
  * Telemetry query endpoint enforcing strict tenant isolation with optional region,
- * severity, and category filtering.
+ * severity, and category filtering, and optional built-in AIOps intelligence enrichment.
  * 
  * Query parameters:
  * - tenantId (required): Target tenant identifier
  * - region (optional): Telemetry origin region
  * - severity (optional): Severity filter ('low' | 'medium' | 'high' | 'critical')
  * - category (optional): Category filter ('infra' | 'network' | 'security' | 'collector')
+ * - includeAiops (optional): 'true' to attach healthScore, healthStatus, and AIOps intelligence
  */
 export async function GET(request) {
   try {
@@ -19,6 +21,8 @@ export async function GET(request) {
     const regionParam = searchParams.get('region');
     const severityParam = searchParams.get('severity');
     const categoryParam = searchParams.get('category');
+    const includeAiops =
+      searchParams.get('includeAiops') === 'true' || searchParams.get('aiops') === 'true';
 
     // 1. Enforce required tenantId
     if (!rawTenantId || rawTenantId.trim() === '') {
@@ -48,15 +52,26 @@ export async function GET(request) {
     }
 
     // 4. Return tenant telemetry payload
-    return NextResponse.json(
-      {
-        tenantId,
-        region: region || 'all',
-        ...result,
-        events: filteredEvents,
-      },
-      { status: 200 }
-    );
+    const responsePayload = {
+      tenantId,
+      region: region || 'all',
+      ...result,
+      events: filteredEvents,
+    };
+
+    // Attach AIOps insights only when explicitly requested
+    if (includeAiops) {
+      const aiopsReport = analyzeTenantOps(tenantId, {
+        region,
+        customEvents: filteredEvents,
+      });
+      responsePayload.healthScore = aiopsReport.healthScore;
+      responsePayload.healthStatus = aiopsReport.healthStatus;
+      responsePayload.categoryHealth = aiopsReport.categoryHealth;
+      responsePayload.aiops = aiopsReport;
+    }
+
+    return NextResponse.json(responsePayload, { status: 200 });
   } catch (error) {
     if (error instanceof TenantIsolationError || error.name === 'TenantIsolationError') {
       return NextResponse.json(
