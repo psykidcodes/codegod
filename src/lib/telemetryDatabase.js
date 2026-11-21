@@ -16,7 +16,7 @@ import {
   generateRecommendations,
 } from './aiopsEngine.js';
 import { hashPassword } from './auth.js';
-import { ingestBatch } from './saasEngine.js';
+import { ingestBatch, tenantStore } from './saasEngine.js';
 import { defaultCollector, ATTACK_TYPES, LEAK_TYPES } from './localCollector.js';
 
 export const SCENARIO_TYPES = Object.freeze({
@@ -160,12 +160,25 @@ export class TelemetryDatabase {
         identifier_type TEXT NOT NULL,
         password_hash TEXT NOT NULL,
         salt TEXT NOT NULL,
+        is_host INTEGER DEFAULT 0,
+        role TEXT DEFAULT 'tenant',
         created_at_utc TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_users_identifier ON users (identifier);
       CREATE INDEX IF NOT EXISTS idx_users_tenant ON users (tenant_id);
     `);
+
+    try {
+      this.db.exec('ALTER TABLE users ADD COLUMN is_host INTEGER DEFAULT 0;');
+    } catch {
+      // Column exists
+    }
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'tenant';");
+    } catch {
+      // Column exists
+    }
 
     this.seedDefaultTenants();
     this.seedDefaultUsers();
@@ -216,6 +229,14 @@ export class TelemetryDatabase {
         slaTarget: '99.999%',
         status: 'active',
       },
+      {
+        tenantId: 'cicada-host',
+        name: 'Cicada Core SaaS Cloud Platform',
+        tier: 'host',
+        region: 'us-east-1',
+        slaTarget: '99.9999%',
+        status: 'active',
+      },
     ];
 
     const stmt = this.db.prepare(`
@@ -240,6 +261,8 @@ export class TelemetryDatabase {
         identifier: 'admin@acme.com',
         identifierType: 'email',
         password: 'Password123!',
+        isHost: 0,
+        role: 'tenant',
       };
 
       const existing = this.getUserByIdentifier(demoAccount.identifier);
@@ -252,6 +275,8 @@ export class TelemetryDatabase {
           identifierType: demoAccount.identifierType,
           passwordHash: hash,
           salt,
+          isHost: 0,
+          role: 'tenant',
         });
       }
 
@@ -262,6 +287,8 @@ export class TelemetryDatabase {
         identifier: '+15551234567',
         identifierType: 'mobile',
         password: 'Password123!',
+        isHost: 0,
+        role: 'tenant',
       };
 
       const existingMobile = this.getUserByIdentifier(mobileAccount.identifier);
@@ -274,6 +301,8 @@ export class TelemetryDatabase {
           identifierType: mobileAccount.identifierType,
           passwordHash: hash,
           salt,
+          isHost: 0,
+          role: 'tenant',
         });
       }
 
@@ -284,6 +313,8 @@ export class TelemetryDatabase {
         identifier: 'secops@shield-defense.com',
         identifierType: 'email',
         password: 'Password123!',
+        isHost: 0,
+        role: 'tenant',
       };
 
       const existingShield = this.getUserByIdentifier(shieldAccount.identifier);
@@ -296,6 +327,34 @@ export class TelemetryDatabase {
           identifierType: shieldAccount.identifierType,
           passwordHash: hash,
           salt,
+          isHost: 0,
+          role: 'tenant',
+        });
+      }
+
+      // Seed host platform account: cicada-host
+      const hostAccount = {
+        userId: 'usr-cicada-host',
+        tenantId: 'cicada-host',
+        identifier: 'host@cicada.io',
+        identifierType: 'email',
+        password: 'Password123!',
+        isHost: 1,
+        role: 'host',
+      };
+
+      const existingHost = this.getUserByIdentifier(hostAccount.identifier);
+      if (!existingHost) {
+        const { salt, hash } = hashPassword(hostAccount.password);
+        this.createUser({
+          userId: hostAccount.userId,
+          tenantId: hostAccount.tenantId,
+          identifier: hostAccount.identifier,
+          identifierType: hostAccount.identifierType,
+          passwordHash: hash,
+          salt,
+          isHost: 1,
+          role: 'host',
         });
       }
     } catch {
@@ -311,11 +370,13 @@ export class TelemetryDatabase {
    */
   createUser(user) {
     const stmt = this.db.prepare(`
-      INSERT INTO users (user_id, tenant_id, identifier, identifier_type, password_hash, salt, created_at_utc)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (user_id, tenant_id, identifier, identifier_type, password_hash, salt, is_host, role, created_at_utc)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const nowUtc = user.createdAtUtc || new Date().toISOString();
+    const isHostVal = user.isHost ? 1 : 0;
+    const roleVal = user.role || (user.isHost ? 'host' : 'tenant');
     stmt.run(
       user.userId,
       user.tenantId,
@@ -323,6 +384,8 @@ export class TelemetryDatabase {
       user.identifierType,
       user.passwordHash,
       user.salt,
+      isHostVal,
+      roleVal,
       nowUtc
     );
 
@@ -331,6 +394,8 @@ export class TelemetryDatabase {
       tenantId: user.tenantId,
       identifier: user.identifier,
       identifierType: user.identifierType,
+      isHost: Boolean(isHostVal),
+      role: roleVal,
       createdAtUtc: nowUtc,
     };
   }
@@ -352,6 +417,8 @@ export class TelemetryDatabase {
       identifierType: row.identifier_type,
       passwordHash: row.password_hash,
       salt: row.salt,
+      isHost: Boolean(row.is_host || row.tenant_id === 'cicada-host' || row.identifier === 'host@cicada.io'),
+      role: row.role || (row.is_host ? 'host' : 'tenant'),
       createdAtUtc: row.created_at_utc,
     };
   }
@@ -373,6 +440,8 @@ export class TelemetryDatabase {
       identifierType: row.identifier_type,
       passwordHash: row.password_hash,
       salt: row.salt,
+      isHost: Boolean(row.is_host || row.tenant_id === 'cicada-host' || row.identifier === 'host@cicada.io'),
+      role: row.role || (row.is_host ? 'host' : 'tenant'),
       createdAtUtc: row.created_at_utc,
     };
   }
@@ -779,6 +848,14 @@ export class TelemetryDatabase {
     const simulationId = `sim-${scenarioType}-${Date.now()}`;
     const generatedEvents = [];
 
+    // Reset in-memory partition before applying simulation scenario so state updates cleanly
+    const prePartition = tenantStore.get(normalizedTenant);
+    if (prePartition) {
+      prePartition.events = [];
+      prePartition.seenPayloadIds = new Set();
+      prePartition.stats.lastSeenUtc = new Date().toISOString();
+    }
+
     if (scenarioType === SCENARIO_TYPES.SPIKES) {
       // 1. Establish normal baseline events (5 events with 30-50ms latency, 20-30% CPU)
       for (let i = 0; i < 5; i++) {
@@ -787,10 +864,10 @@ export class TelemetryDatabase {
           tenantId: normalizedTenant,
           region,
           sourceAlias: 'api-service',
-          eventTimestampUtc: new Date(baseTimeMs - (10 - i) * 60 * 1000).toISOString(),
+          eventTimestampUtc: new Date(baseTimeMs - (8 - i) * 2000).toISOString(),
           category: 'network',
           severity: 'low',
-          metrics: { latencyMs: 40 + (i % 3) * 5, cpuUsage: 25 + i * 2, errorRate: 0.001 },
+          metrics: { latencyMs: 35 + (i % 3) * 5, cpuUsage: 25 + i * 2, errorRate: 0.001 },
           summary: 'Normal baseline operational traffic',
         });
       }
@@ -801,7 +878,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'compute-cluster',
-        eventTimestampUtc: new Date(baseTimeMs - 3 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 3000).toISOString(),
         category: 'infra',
         severity: 'critical',
         metrics: { latencyMs: 2850, cpuUsage: 99, memoryUsage: 96, errorRate: 0.28 },
@@ -813,7 +890,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'api-service',
-        eventTimestampUtc: new Date(baseTimeMs - 2 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 2000).toISOString(),
         category: 'network',
         severity: 'high',
         metrics: { latencyMs: 2450, cpuUsage: 94, errorRate: 0.18 },
@@ -825,7 +902,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'edge-gateway',
-        eventTimestampUtc: new Date(baseTimeMs - 1 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 1000).toISOString(),
         category: 'network',
         severity: 'high',
         metrics: { latencyMs: 3100, errorRate: 0.32 },
@@ -839,7 +916,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'db-master-us-east',
-        eventTimestampUtc: new Date(baseTimeMs - 5 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 5000).toISOString(),
         category: 'infra',
         severity: 'critical',
         metrics: { memoryUsage: 99, cpuUsage: 100, diskIo: 98 },
@@ -852,7 +929,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'payment-service',
-        eventTimestampUtc: new Date(baseTimeMs - 3 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 3000).toISOString(),
         category: 'network',
         severity: 'high',
         metrics: { latencyMs: 4500, errorRate: 0.65 },
@@ -865,7 +942,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'telemetry-collector-daemon',
-        eventTimestampUtc: new Date(baseTimeMs - 1 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 1000).toISOString(),
         category: 'collector',
         severity: 'high',
         metrics: { queueSaturation: 98, droppedEventsCount: 450 },
@@ -878,7 +955,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'auth-gateway',
-        eventTimestampUtc: new Date(baseTimeMs - 4 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 4000).toISOString(),
         category: 'security',
         severity: 'high',
         metrics: { failedLoginCount: 150, requestRate: 350, errorRate: 0.85 },
@@ -890,7 +967,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'auth-gateway',
-        eventTimestampUtc: new Date(baseTimeMs - 2 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 2000).toISOString(),
         category: 'security',
         severity: 'critical',
         metrics: { failedLoginCount: 520, requestRate: 850, errorRate: 0.98 },
@@ -902,7 +979,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'auth-gateway',
-        eventTimestampUtc: new Date(baseTimeMs - 1 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 1000).toISOString(),
         category: 'security',
         severity: 'critical',
         metrics: { blocked: 1, attackType: 'SQL_INJECTION' },
@@ -940,7 +1017,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'edge-auth-cluster',
-        eventTimestampUtc: new Date(baseTimeMs - 3 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 4000).toISOString(),
         category: 'security',
         severity: 'critical',
         metrics: {
@@ -957,7 +1034,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'worker-daemon',
-        eventTimestampUtc: new Date(baseTimeMs - 2 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 2000).toISOString(),
         category: 'security',
         severity: 'critical',
         metrics: {
@@ -974,7 +1051,7 @@ export class TelemetryDatabase {
         tenantId: normalizedTenant,
         region,
         sourceAlias: 'customer-portal',
-        eventTimestampUtc: new Date(baseTimeMs - 1 * 60 * 1000).toISOString(),
+        eventTimestampUtc: new Date(baseTimeMs - 1000).toISOString(),
         category: 'security',
         severity: 'high',
         metrics: {
@@ -1020,17 +1097,27 @@ export class TelemetryDatabase {
           (defaultCollector.stats.leakBreakdown[LEAK_TYPES.SSN] || 0) + 1;
       }
     } else if (scenarioType === SCENARIO_TYPES.BASELINE) {
-      // Normal healthy baseline operational traffic
+      // 1. Purge past critical and high severity attack/incident events for this tenant so health restores to 100% HEALTHY
+      this.db.prepare(`
+        DELETE FROM telemetry_events 
+        WHERE tenant_id = ? AND severity IN ('critical', 'high')
+      `).run(normalizedTenant);
+
+      // 2. Clear past anomalies and mark past incidents as RESOLVED
+      this.db.prepare('DELETE FROM anomalies WHERE tenant_id = ?').run(normalizedTenant);
+      this.db.prepare("UPDATE incidents SET status = 'RESOLVED' WHERE tenant_id = ?").run(normalizedTenant);
+
+      // 3. Normal healthy baseline operational traffic
       for (let i = 0; i < 6; i++) {
         generatedEvents.push({
           payloadId: `${simulationId}-baseline-${i}`,
           tenantId: normalizedTenant,
           region,
           sourceAlias: 'gateway-core',
-          eventTimestampUtc: new Date(baseTimeMs - (6 - i) * 30 * 1000).toISOString(),
+          eventTimestampUtc: new Date(baseTimeMs - (6 - i) * 2000).toISOString(),
           category: 'network',
           severity: 'low',
-          metrics: { latencyMs: 28 + (i % 3) * 4, cpuUsage: 18 + i * 2, errorRate: 0.0001 },
+          metrics: { latencyMs: 25 + (i % 3) * 3, cpuUsage: 18 + i * 2, errorRate: 0.0001 },
           summary: 'Steady-state production telemetry within established baseline',
         });
       }
@@ -1046,6 +1133,12 @@ export class TelemetryDatabase {
       ingestBatch(generatedEvents, 'collector-alpha-token');
     } catch {
       // Non-fatal if partition is in-memory only
+    }
+
+    // Ensure partition lastSeenUtc is updated to now so staleness penalty is not triggered
+    const postPartition = tenantStore.get(normalizedTenant);
+    if (postPartition) {
+      postPartition.stats.lastSeenUtc = new Date().toISOString();
     }
 
     // 2. Compute dynamic baselines

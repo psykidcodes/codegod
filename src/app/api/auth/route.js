@@ -159,6 +159,8 @@ export async function POST(request) {
       // Hash password (salt + scrypt)
       const { salt, hash } = hashPassword(password);
       const userId = `usr-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const isHost = Boolean(body.isHost || tenantId === 'cicada-host' || normalizedId === 'host@cicada.io');
+      const role = body.role || (isHost ? 'host' : 'tenant');
 
       defaultDatabase.createUser({
         userId,
@@ -167,9 +169,11 @@ export async function POST(request) {
         identifierType: idType,
         passwordHash: hash,
         salt,
+        isHost: isHost ? 1 : 0,
+        role,
       });
 
-      const token = createSessionToken({ userId, tenantId, identifier: normalizedId });
+      const token = createSessionToken({ userId, tenantId, identifier: normalizedId, isHost, role });
 
       return NextResponse.json(
         {
@@ -180,6 +184,8 @@ export async function POST(request) {
             tenantId,
             maskedIdentifier: maskIdentifier(normalizedId),
             identifierType: idType,
+            isHost,
+            role,
           },
           tenant: {
             tenantId: tenant.tenantId,
@@ -219,10 +225,15 @@ export async function POST(request) {
         slaTarget: '99.99%',
       };
 
+      const isHost = Boolean(user.isHost || user.role === 'host' || user.tenantId === 'cicada-host' || user.identifier === 'host@cicada.io');
+      const role = user.role || (isHost ? 'host' : 'tenant');
+
       const token = createSessionToken({
         userId: user.userId,
         tenantId: user.tenantId,
         identifier: user.identifier,
+        isHost,
+        role,
       });
 
       return NextResponse.json(
@@ -234,6 +245,8 @@ export async function POST(request) {
             tenantId: user.tenantId,
             maskedIdentifier: maskIdentifier(user.identifier),
             identifierType: user.identifierType,
+            isHost,
+            role,
           },
           tenant: {
             tenantId: tenant.tenantId,
@@ -288,6 +301,9 @@ export async function GET(request) {
       slaTarget: '99.99%',
     };
 
+    const isHost = Boolean(session.isHost || user?.isHost || session.tenantId === 'cicada-host' || session.identifier === 'host@cicada.io');
+    const role = session.role || user?.role || (isHost ? 'host' : 'tenant');
+
     return NextResponse.json(
       {
         authenticated: true,
@@ -296,6 +312,8 @@ export async function GET(request) {
           tenantId: session.tenantId,
           maskedIdentifier: maskIdentifier(session.identifier),
           identifierType: user?.identifierType || 'email',
+          isHost,
+          role,
         },
         tenant: {
           tenantId: tenant.tenantId,

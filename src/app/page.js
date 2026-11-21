@@ -402,13 +402,18 @@ export default function HomePage() {
     }
   };
 
-  // 6. Switch Demo Tenant with 1-click
+  // 6. Switch Demo Tenant or Host with 1-click
   const handleSwitchDemoTenant = async (targetTenantId) => {
     setLoading(true);
     try {
-      const targetUser = targetTenantId === 'shield-defense'
-        ? { identifier: 'secops@shield-defense.com', password: 'Password123!' }
-        : { identifier: 'admin@acme.com', password: 'Password123!' };
+      let targetUser;
+      if (targetTenantId === 'shield-defense') {
+        targetUser = { identifier: 'secops@shield-defense.com', password: 'Password123!' };
+      } else if (targetTenantId === 'cicada-host') {
+        targetUser = { identifier: 'host@cicada.io', password: 'Password123!' };
+      } else {
+        targetUser = { identifier: 'admin@acme.com', password: 'Password123!' };
+      }
 
       const res = await fetch('/api/auth?action=signin', {
         method: 'POST',
@@ -420,10 +425,17 @@ export default function HomePage() {
         localStorage.setItem('cicada_session_token', data.token);
         setCurrentUser(data.user);
         setIsolationAudit(null);
-        setActionMessage({
-          type: 'success',
-          text: `Switched partition context to '${data.user.tenantId}' (${targetTenantId === 'shield-defense' ? 'CyberShield Defense Systems' : 'Acme Corporation'}).`,
-        });
+        if (data.user.isHost) {
+          setActionMessage({
+            type: 'success',
+            text: `👑 Authenticated as Software Host (${data.user.identifier}). Central SaaS Engine unlocked.`,
+          });
+        } else {
+          setActionMessage({
+            type: 'success',
+            text: `Switched partition context to '${data.user.tenantId}' (${targetTenantId === 'shield-defense' ? 'CyberShield Defense Systems' : 'Acme Corporation'}). Central SaaS Engine restricted to Host.`,
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to switch tenant', err);
@@ -431,6 +443,13 @@ export default function HomePage() {
       setLoading(false);
     }
   };
+
+  // Enforce SaaS engine visibility: only Host can view SaaS Engine tab
+  useEffect(() => {
+    if (activeTab === 'saas' && !currentUser?.isHost) {
+      setActiveTab('overview');
+    }
+  }, [activeTab, currentUser]);
 
   // Sync data whenever currentUser changes
   useEffect(() => {
@@ -1130,9 +1149,24 @@ export default function HomePage() {
           {/* Quick Demo Credentials */}
           <div style={{ marginTop: '18px', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
             <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
-              ONE-CLICK DEMO ACCOUNTS:
+              ONE-CLICK DEMO ACCOUNTS (TENANTS &amp; HOST):
             </span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('signin');
+                  setAuthIdentifier('host@cicada.io');
+                  setAuthPassword('Password123!');
+                  setAuthError(null);
+                  setAuthSuccess(null);
+                }}
+                className="btn-pill-gold"
+                style={{ fontSize: '0.73rem', justifyContent: 'flex-start', borderRadius: '6px' }}
+                title="Sign in as Platform Host: Unlocks Central SaaS Engine (Tier 2)"
+              >
+                <span>👑</span> <strong>Software Host:</strong> host@cicada.io / Password123! [Central SaaS Engine Host]
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1142,8 +1176,9 @@ export default function HomePage() {
                   setAuthError(null);
                   setAuthSuccess(null);
                 }}
-                className="btn-minimal"
-                style={{ fontSize: '0.73rem', justifyContent: 'flex-start' }}
+                className="btn-pill-sky"
+                style={{ fontSize: '0.73rem', justifyContent: 'flex-start', borderRadius: '6px' }}
+                title="Sign in as Tenant 1 (Acme Corp)"
               >
                 <span>🏢</span> <strong>Tenant 1 (Acme Corp):</strong> admin@acme.com / Password123!
               </button>
@@ -1156,8 +1191,9 @@ export default function HomePage() {
                   setAuthError(null);
                   setAuthSuccess(null);
                 }}
-                className="btn-minimal"
-                style={{ fontSize: '0.73rem', justifyContent: 'flex-start' }}
+                className="btn-pill-indigo"
+                style={{ fontSize: '0.73rem', justifyContent: 'flex-start', borderRadius: '6px' }}
+                title="Sign in as Tenant 2 (CyberShield Defense)"
               >
                 <span>🛡️</span> <strong>Tenant 2 (CyberShield):</strong> secops@shield-defense.com / Password123!
               </button>
@@ -1170,8 +1206,9 @@ export default function HomePage() {
                   setAuthError(null);
                   setAuthSuccess(null);
                 }}
-                className="btn-minimal"
-                style={{ fontSize: '0.73rem', justifyContent: 'flex-start' }}
+                className="btn-pill-mint"
+                style={{ fontSize: '0.73rem', justifyContent: 'flex-start', borderRadius: '6px' }}
+                title="Sign in via Mobile Phone SMS"
               >
                 <span>📱</span> <strong>Ops (Mobile SMS):</strong> +1 555 123 4567 / Password123!
               </button>
@@ -1286,29 +1323,56 @@ export default function HomePage() {
             <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>({aiopsData.healthScore}/100)</span>
           </div>
 
-          {/* User Profile Badge & Quick Tenant Switcher */}
+          {/* User Profile Badge & Quick Tenant/Host Switcher */}
           <div style={{
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
+            background: currentUser.isHost ? 'var(--color-gold-subtle)' : 'var(--bg-surface)',
+            border: currentUser.isHost ? '1px solid var(--color-gold-border)' : '1px solid var(--border-subtle)',
             borderRadius: '6px',
             padding: '3px 8px',
             fontSize: '0.78rem',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
+            flexWrap: 'wrap',
           }}>
-            <span style={{ color: 'var(--text-muted)' }}>Tenant:</span>
-            <strong style={{ color: 'var(--accent)' }}>{currentUser.tenantId}</strong>
-            <span style={{ color: 'var(--border-subtle)' }}>|</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{currentUser.maskedIdentifier}</span>
-            <button
-              onClick={() => handleSwitchDemoTenant(currentUser.tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp')}
-              className="btn-minimal"
-              style={{ padding: '2px 7px', fontSize: '0.68rem', marginLeft: '4px' }}
-              title={`Switch context to ${currentUser.tenantId === 'acme-corp' ? 'shield-defense (CyberShield)' : 'acme-corp (Acme Corp)'}`}
-            >
-              ⇄ Switch to {currentUser.tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp'}
-            </button>
+            {currentUser.isHost ? (
+              <>
+                <span style={{ color: 'var(--color-gold)', fontWeight: '700' }}>👑 HOST ADMIN</span>
+                <span style={{ color: 'var(--border-subtle)' }}>|</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{currentUser.maskedIdentifier}</span>
+                <button
+                  onClick={() => handleSwitchDemoTenant('acme-corp')}
+                  className="btn-pill-sky"
+                  style={{ padding: '2px 8px', fontSize: '0.68rem', marginLeft: '4px' }}
+                  title="Switch to regular tenant view (Acme Corp)"
+                >
+                  🏢 View as Regular Tenant (acme-corp)
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={{ color: 'var(--text-muted)' }}>Tenant:</span>
+                <strong style={{ color: 'var(--accent)' }}>{currentUser.tenantId}</strong>
+                <span style={{ color: 'var(--border-subtle)' }}>|</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{currentUser.maskedIdentifier}</span>
+                <button
+                  onClick={() => handleSwitchDemoTenant(currentUser.tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp')}
+                  className="btn-minimal"
+                  style={{ padding: '2px 7px', fontSize: '0.68rem', marginLeft: '2px' }}
+                  title={`Switch context to ${currentUser.tenantId === 'acme-corp' ? 'shield-defense (CyberShield)' : 'acme-corp (Acme Corp)'}`}
+                >
+                  ⇄ Switch to {currentUser.tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp'}
+                </button>
+                <button
+                  onClick={() => handleSwitchDemoTenant('cicada-host')}
+                  className="btn-pill-gold"
+                  style={{ padding: '2px 8px', fontSize: '0.68rem', marginLeft: '2px' }}
+                  title="Switch to Software Host account (Reveals Central SaaS Engine)"
+                >
+                  👑 Switch to Host View
+                </button>
+              </>
+            )}
           </div>
 
           {/* Simple Mode Toggle */}
@@ -1436,22 +1500,20 @@ export default function HomePage() {
             </span>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             <button
               onClick={() => handleRunSimulation('data_leaks')}
               disabled={loading}
-              className="btn-minimal"
-              style={{ borderColor: 'rgba(244, 63, 94, 0.4)', color: 'var(--color-rose)', fontSize: '0.76rem', padding: '5px 11px' }}
+              className="btn-pill-violet"
               title="Simulate employee leaking OpenAI/AWS keys and PCI card numbers, intercepted by DLP"
             >
-              <span>🔒</span> Sensitive Data Leak (DLP)
+              <span>🕵️</span> PII / Credential Leak (DLP)
             </button>
 
             <button
               onClick={() => handleRunSimulation('failed_logins')}
               disabled={loading}
-              className="btn-minimal"
-              style={{ borderColor: 'rgba(244, 63, 94, 0.4)', color: 'var(--color-rose)', fontSize: '0.76rem', padding: '5px 11px' }}
+              className="btn-pill-coral"
               title="Simulate botnet credential stuffing & SQL injection bypass attempt"
             >
               <span>🛡️</span> SQLi / Brute-Force Attack
@@ -1460,8 +1522,7 @@ export default function HomePage() {
             <button
               onClick={() => handleRunSimulation('outages')}
               disabled={loading}
-              className="btn-minimal"
-              style={{ fontSize: '0.76rem', padding: '5px 11px' }}
+              className="btn-pill-amber"
               title="Simulate cascading database crash and connection pool timeout"
             >
               <span>💥</span> Cascading Service Outage
@@ -1470,8 +1531,7 @@ export default function HomePage() {
             <button
               onClick={() => handleRunSimulation('spikes')}
               disabled={loading}
-              className="btn-minimal"
-              style={{ fontSize: '0.76rem', padding: '5px 11px' }}
+              className="btn-pill-sky"
               title="Simulate sudden compute resource saturation & latency breach"
             >
               <span>⚡</span> Latency / CPU Surge
@@ -1480,8 +1540,7 @@ export default function HomePage() {
             <button
               onClick={() => handleRunSimulation('baseline')}
               disabled={loading}
-              className="btn-minimal"
-              style={{ borderColor: 'rgba(16, 185, 129, 0.4)', color: 'var(--color-emerald)', fontSize: '0.76rem', padding: '5px 11px' }}
+              className="btn-pill-mint"
               title="Reset telemetry partition back to clean baseline"
             >
               <span>🔄</span> Reset to Baseline
@@ -1515,7 +1574,7 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Navigation Tabs */}
+      {/* Navigation Tabs - SaaS Engine is strictly host-only */}
       <nav style={{
         display: 'flex',
         borderBottom: '1px solid var(--border-subtle)',
@@ -1526,7 +1585,7 @@ export default function HomePage() {
         {[
           { id: 'overview', label: '📊 Incidents & Health RCA' },
           { id: 'collector', label: '🛡️ Edge Local Collector (Tier 1)' },
-          { id: 'saas', label: '🏢 SaaS Telemetry Engine (Tier 2)' },
+          ...(currentUser?.isHost ? [{ id: 'saas', label: '👑 Central SaaS Engine (Host Only)' }] : []),
           { id: 'playground', label: '🧪 Collector Playground (Automated)' },
           { id: 'api', label: '🔌 Endpoints & Architecture' },
         ].map((tab) => (
@@ -1534,10 +1593,14 @@ export default function HomePage() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             style={{
-              background: 'transparent',
+              background: tab.id === 'saas' && activeTab === tab.id ? 'var(--color-gold-subtle)' : 'transparent',
               border: 'none',
-              borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
-              color: activeTab === tab.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+              borderBottom: activeTab === tab.id
+                ? (tab.id === 'saas' ? '2px solid var(--color-gold)' : '2px solid var(--accent)')
+                : '2px solid transparent',
+              color: activeTab === tab.id
+                ? (tab.id === 'saas' ? 'var(--color-gold)' : 'var(--text-primary)')
+                : 'var(--text-secondary)',
               padding: '8px 14px',
               fontSize: '0.82rem',
               fontWeight: activeTab === tab.id ? '600' : '400',
@@ -1553,10 +1616,10 @@ export default function HomePage() {
       {/* TAB 1: Incidents & Health RCA */}
       {activeTab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
-          {/* Domain Health Radar */}
-          <div className="card-minimal" style={{ padding: '18px' }}>
+          {/* Domain Health Radar - Sky Blue Card */}
+          <div className="card-sky" style={{ padding: '18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ fontSize: '0.88rem', fontWeight: '600' }}>
+              <h3 style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--color-sky)' }}>
                 Operational Domain Status
               </h3>
             </div>
@@ -1591,9 +1654,9 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Anomaly Detection Radar */}
-          <div className="card-minimal" style={{ padding: '18px' }}>
-            <h3 style={{ fontSize: '0.88rem', fontWeight: '600', marginBottom: '8px' }}>
+          {/* Anomaly Detection Radar - Cyber Violet Card */}
+          <div className="card-violet" style={{ padding: '18px' }}>
+            <h3 style={{ fontSize: '0.88rem', fontWeight: '600', marginBottom: '8px', color: 'var(--color-violet)' }}>
               Statistical Outlier Detection (Z ≥ 2.0)
             </h3>
             {simpleMode && (
@@ -1628,8 +1691,8 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Dedicated Failed-Login Security Summary Card */}
-          <div className="card-minimal" style={{ gridColumn: '1 / -1', padding: '18px' }}>
+          {/* Dedicated Failed-Login Security Summary Card - Coral Rose Card */}
+          <div className="card-coral" style={{ gridColumn: '1 / -1', padding: '18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.05rem' }}>🛡️</span>
@@ -1735,12 +1798,12 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Visual Alert Merging Correlation Flow Diagram */}
-          <div className="card-minimal" style={{ gridColumn: '1 / -1', padding: '18px' }}>
+          {/* Visual Alert Merging Correlation Flow Diagram - Cyber Violet Card */}
+          <div className="card-violet" style={{ gridColumn: '1 / -1', padding: '18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.05rem' }}>🔀</span>
-                <h3 style={{ fontSize: '0.92rem', fontWeight: '600' }}>
+                <h3 style={{ fontSize: '0.92rem', fontWeight: '600', color: 'var(--color-violet)' }}>
                   AIOps Correlation Engine: Alert Storm Deduplication &amp; Consolidation
                 </h3>
               </div>
@@ -1942,10 +2005,11 @@ export default function HomePage() {
       {/* TAB 2: Decoupled Tier 1: Edge Local Collector */}
       {activeTab === 'collector' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="card-minimal" style={{ padding: '20px' }}>
+          {/* Edge Local Collector Agent - Mint Green Card */}
+          <div className="card-mint" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--color-emerald)' }}>
                   Edge Local Collector Agent (Client Perimeter Tier)
                 </h3>
               </div>
@@ -2019,12 +2083,12 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Local Buffering + Retry after Outage Card */}
-          <div className="card-minimal" style={{ padding: '20px', borderLeft: isOutageSimulated ? '4px solid var(--color-rose)' : '4px solid var(--color-emerald)' }}>
+          {/* Local Buffering + Retry after Outage Card - Radiant Amber Card */}
+          <div className="card-amber" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.1rem' }}>🔄</span>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--color-amber)' }}>
                   Resilient Edge Local Buffering &amp; Outage Replay Engine
                 </h3>
               </div>
@@ -2117,11 +2181,38 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* TAB 3: Decoupled Tier 2: Central SaaS Telemetry Engine */}
-      {activeTab === 'saas' && (
+      {/* TAB 3: Decoupled Tier 2: Central SaaS Telemetry Engine (Host Only) */}
+      {activeTab === 'saas' && currentUser?.isHost && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="card-minimal" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '4px' }}>
+          {/* Host Exclusive Access Banner */}
+          <div style={{
+            background: 'var(--color-gold-subtle)',
+            border: '1px solid var(--color-gold-border)',
+            borderLeft: '4px solid var(--color-gold)',
+            borderRadius: '6px',
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+          }}>
+            <span style={{ fontSize: '1.5rem' }}>👑</span>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <strong style={{ color: 'var(--color-gold)', fontSize: '0.88rem' }}>
+                  HOST PRIVILEGED CONSOLE: Central Multi-Tenant SaaS Engine
+                </strong>
+                <span className="badge-minimal" style={{ background: 'var(--color-gold)', color: '#000000', fontWeight: '700' }}>
+                  HOST ONLY
+                </span>
+              </div>
+              <p style={{ margin: '3px 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                You are authenticated as Software Host (<code style={{ color: 'var(--color-gold)' }}>{currentUser.identifier}</code>). This tier manages cross-tenant infrastructure, allow-list schema firewalls, and partition isolation. Regular tenants (<code style={{ color: 'var(--text-primary)' }}>acme-corp</code>, <code style={{ color: 'var(--text-primary)' }}>shield-defense</code>) cannot view this console.
+              </p>
+            </div>
+          </div>
+
+          <div className="card-host" style={{ padding: '20px' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '4px', color: 'var(--color-gold)' }}>
               Central Multi-Tenant SaaS Engine (Cloud Platform Tier)
             </h3>
             {simpleMode && (
@@ -2159,8 +2250,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Idempotent Payload IDs (No Duplicates) Card */}
-          <div className="card-minimal" style={{ padding: '20px' }}>
+          {/* Idempotent Payload IDs (No Duplicates) Card - Mint Green Card */}
+          <div className="card-mint" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.1rem' }}>🆔</span>
@@ -2249,12 +2340,12 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Tenant Separation Across 2 Demo Tenants Card */}
-          <div className="card-minimal" style={{ padding: '20px' }}>
+          {/* Tenant Separation Across 2 Demo Tenants Card - Royal Indigo Card */}
+          <div className="card-indigo" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.1rem' }}>🏢</span>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--color-indigo)' }}>
                   Two-Tenant Separation Showcase (Row-Level Security)
                 </h3>
               </div>
@@ -2387,12 +2478,12 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* TAB 4: Automated Collector Playground */}
+      {/* TAB 4: Automated Collector Playground - Sky Blue Card */}
       {activeTab === 'playground' && (
-        <div className="card-minimal" style={{ padding: '20px' }}>
+        <div className="card-sky" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
             <div>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--color-sky)' }}>
                 Collector Playground (Automated Verification)
               </h3>
             </div>
@@ -2493,10 +2584,10 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* TAB 5: Endpoints & Architecture */}
+      {/* TAB 5: Endpoints & Architecture - Royal Indigo Card */}
       {activeTab === 'api' && (
-        <div className="card-minimal" style={{ padding: '20px' }}>
-          <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '6px' }}>
+        <div className="card-indigo" style={{ padding: '20px' }}>
+          <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '6px', color: 'var(--color-indigo)' }}>
             System Architecture & REST Endpoints
           </h3>
           {simpleMode && (

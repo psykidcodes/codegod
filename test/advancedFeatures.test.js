@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { defaultCollector } from '../src/lib/localCollector.js';
 import { POST as postCollector, GET as getCollector } from '../src/app/api/collector/route.js';
 import { GET as getDatabase } from '../src/app/api/database/route.js';
+import { POST as postSimulate } from '../src/app/api/simulate/route.js';
+import { GET as getAiops } from '../src/app/api/aiops/route.js';
+import { POST as postAuth, GET as getAuth } from '../src/app/api/auth/route.js';
+import { createSessionToken, verifySessionToken } from '../src/lib/auth.js';
 import { defaultDatabase } from '../src/lib/telemetryDatabase.js';
 import { resetTenantStore } from '../src/lib/saasEngine.js';
 
@@ -191,4 +195,101 @@ test('5. Two-Tenant Separation: Cryptographic isolation audit confirms 0 cross-t
   assert.equal(audit.opposingTenant.tenantId, 'shield-defense');
   assert.equal(audit.primaryTenant.leaksDetected, 0);
   assert.equal(audit.opposingTenant.leaksDetected, 0);
+});
+
+test('6. Health Condition Updating: Accurately degrades to CRITICAL during attacks and restores immediately to HEALTHY on baseline', async () => {
+  const tenantId = 'tenant-health-cycle-test';
+
+  // Step 1: Simulate critical attack (data_leaks)
+  const reqAttack = {
+    json: async () => ({ scenario: 'data_leaks', tenantId }),
+  };
+  const resAttack = await postSimulate(reqAttack);
+  assert.equal(resAttack.status, 200);
+  const dataAttack = await resAttack.json();
+
+  assert.ok(dataAttack.aiopsReport);
+  assert.equal(dataAttack.aiopsReport.healthStatus, 'CRITICAL');
+  assert.ok(dataAttack.aiopsReport.healthScore < 50);
+
+  // Step 2: Simulate baseline immediately after on the same tenant
+  const reqBaseline = {
+    json: async () => ({ scenario: 'baseline', tenantId }),
+  };
+  const resBaseline = await postSimulate(reqBaseline);
+  assert.equal(resBaseline.status, 200);
+  const dataBaseline = await resBaseline.json();
+
+  assert.ok(dataBaseline.aiopsReport);
+  assert.equal(dataBaseline.aiopsReport.healthStatus, 'HEALTHY');
+  assert.ok(dataBaseline.aiopsReport.healthScore >= 85);
+
+  // Step 3: Query GET /api/aiops to ensure subsequent queries also return HEALTHY condition
+  const reqAiops = {
+    url: `http://localhost:3000/api/aiops?tenantId=${tenantId}`,
+  };
+  const resAiops = await getAiops(reqAiops);
+  assert.equal(resAiops.status, 200);
+  const dataAiops = await resAiops.json();
+
+  assert.equal(dataAiops.healthStatus, 'HEALTHY');
+  assert.ok(dataAiops.healthScore >= 85);
+});
+
+test('7. Software Host Privilege: host@cicada.io receives isHost=true while regular tenants receive isHost=false', async () => {
+  // Test Host sign in
+  const reqHost = {
+    url: 'http://localhost:3000/api/auth?action=signin',
+    json: async () => ({ identifier: 'host@cicada.io', password: 'Password123!' }),
+  };
+  const resHost = await postAuth(reqHost);
+  assert.equal(resHost.status, 200);
+  const dataHost = await resHost.json();
+
+  assert.equal(dataHost.status, 'authenticated');
+  assert.equal(dataHost.user.isHost, true);
+  assert.equal(dataHost.user.role, 'host');
+  assert.equal(dataHost.tenant.tenantId, 'cicada-host');
+
+  // Verify host session token
+  const hostSession = verifySessionToken(dataHost.token);
+  assert.equal(hostSession.isHost, true);
+  assert.equal(hostSession.role, 'host');
+
+  // Test Regular Tenant sign in (Acme Corp)
+  const reqTenant = {
+    url: 'http://localhost:3000/api/auth?action=signin',
+    json: async () => ({ identifier: 'admin@acme.com', password: 'Password123!' }),
+  };
+  const resTenant = await postAuth(reqTenant);
+  assert.equal(resTenant.status, 200);
+  const dataTenant = await resTenant.json();
+
+  assert.equal(dataTenant.status, 'authenticated');
+  assert.equal(dataTenant.user.isHost, false);
+  assert.equal(dataTenant.user.role, 'tenant');
+  assert.equal(dataTenant.tenant.tenantId, 'acme-corp');
+
+  // Verify tenant session token
+  const tenantSession = verifySessionToken(dataTenant.token);
+  assert.equal(tenantSession.isHost, false);
+  assert.equal(tenantSession.role, 'tenant');
+
+  // Test GET /api/auth?action=me with host token
+  const reqMeHost = {
+    headers: { get: (name) => name.toLowerCase() === 'authorization' ? `Bearer ${dataHost.token}` : null },
+  };
+  const resMeHost = await getAuth(reqMeHost);
+  const dataMeHost = await resMeHost.json();
+  assert.equal(dataMeHost.authenticated, true);
+  assert.equal(dataMeHost.user.isHost, true);
+
+  // Test GET /api/auth?action=me with tenant token
+  const reqMeTenant = {
+    headers: { get: (name) => name.toLowerCase() === 'authorization' ? `Bearer ${dataTenant.token}` : null },
+  };
+  const resMeTenant = await getAuth(reqMeTenant);
+  const dataMeTenant = await resMeTenant.json();
+  assert.equal(dataMeTenant.authenticated, true);
+  assert.equal(dataMeTenant.user.isHost, false);
 });

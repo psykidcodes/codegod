@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server.js';
-import { TenantIsolationError } from '../../../lib/saasEngine.js';
+import { TenantIsolationError, tenantStore } from '../../../lib/saasEngine.js';
 import { analyzeTenantOps } from '../../../lib/aiopsEngine.js';
+import { defaultDatabase } from '../../../lib/telemetryDatabase.js';
 
 /**
  * GET /api/aiops
@@ -28,8 +29,18 @@ export async function GET(request) {
     const tenantId = rawTenantId.trim();
     const region = regionParam && regionParam.trim() !== '' ? regionParam.trim() : null;
 
-    // 2. Run end-to-end AIOps intelligence analysis
-    const aiopsReport = analyzeTenantOps(tenantId, { region });
+    // 2. Query in-memory partition; if empty, check canonical database events
+    const partition = tenantStore.get(tenantId);
+    let customEvents = null;
+    if (!partition || !partition.events || partition.events.length === 0) {
+      const dbEvents = defaultDatabase.getEvents(tenantId, { region });
+      if (dbEvents && dbEvents.length > 0) {
+        customEvents = dbEvents;
+      }
+    }
+
+    // 3. Run end-to-end AIOps intelligence analysis
+    const aiopsReport = analyzeTenantOps(tenantId, { region, customEvents });
 
     return NextResponse.json(aiopsReport, { status: 200 });
   } catch (error) {

@@ -22,14 +22,39 @@
 
   --color-emerald: #10b981;
   --color-emerald-subtle: rgba(16, 185, 129, 0.12);
+  --color-emerald-border: rgba(16, 185, 129, 0.35);
+
   --color-amber: #f59e0b;
   --color-amber-subtle: rgba(245, 158, 11, 0.12);
+  --color-amber-border: rgba(245, 158, 11, 0.35);
+
   --color-rose: #f43f5e;
   --color-rose-subtle: rgba(244, 63, 94, 0.12);
+  --color-rose-border: rgba(244, 63, 94, 0.35);
+
   --color-cyan: #06b6d4;
   --color-cyan-subtle: rgba(6, 182, 212, 0.12);
+  --color-cyan-border: rgba(6, 182, 212, 0.35);
+
+  --color-sky: #0ea5e9;
+  --color-sky-subtle: rgba(14, 165, 233, 0.12);
+  --color-sky-border: rgba(14, 165, 233, 0.35);
+
   --color-purple: #8b5cf6;
   --color-purple-subtle: rgba(139, 92, 246, 0.12);
+  --color-purple-border: rgba(139, 92, 246, 0.35);
+
+  --color-violet: #8b5cf6;
+  --color-violet-subtle: rgba(139, 92, 246, 0.12);
+  --color-violet-border: rgba(139, 92, 246, 0.35);
+
+  --color-indigo: #6366f1;
+  --color-indigo-subtle: rgba(99, 102, 241, 0.12);
+  --color-indigo-border: rgba(99, 102, 241, 0.35);
+
+  --color-gold: #eab308;
+  --color-gold-subtle: rgba(234, 179, 8, 0.14);
+  --color-gold-border: rgba(234, 179, 8, 0.45);
 
   --code-bg: #0c0d11;
   --code-border: #23232b;
@@ -148,14 +173,39 @@
 
   --color-emerald: #059669;
   --color-emerald-subtle: rgba(5, 150, 105, 0.08);
+  --color-emerald-border: rgba(5, 150, 105, 0.3);
+
   --color-amber: #d97706;
   --color-amber-subtle: rgba(217, 119, 6, 0.08);
+  --color-amber-border: rgba(217, 119, 6, 0.3);
+
   --color-rose: #e11d48;
   --color-rose-subtle: rgba(225, 29, 72, 0.08);
+  --color-rose-border: rgba(225, 29, 72, 0.3);
+
   --color-cyan: #0891b2;
   --color-cyan-subtle: rgba(8, 145, 178, 0.08);
+  --color-cyan-border: rgba(8, 145, 178, 0.3);
+
+  --color-sky: #0284c7;
+  --color-sky-subtle: rgba(2, 132, 199, 0.08);
+  --color-sky-border: rgba(2, 132, 199, 0.3);
+
   --color-purple: #7c3aed;
   --color-purple-subtle: rgba(124, 58, 237, 0.08);
+  --color-purple-border: rgba(124, 58, 237, 0.3);
+
+  --color-violet: #7c3aed;
+  --color-violet-subtle: rgba(124, 58, 237, 0.08);
+  --color-violet-border: rgba(124, 58, 237, 0.3);
+
+  --color-indigo: #4f46e5;
+  --color-indigo-subtle: rgba(79, 70, 229, 0.08);
+  --color-indigo-border: rgba(79, 70, 229, 0.3);
+
+  --color-gold: #b45309;
+  --color-gold-subtle: rgba(180, 83, 9, 0.1);
+  --color-gold-border: rgba(180, 83, 9, 0.35);
 
   --code-bg: #f8fafc;
   --code-border: #e2e8f0;
@@ -475,4 +525,253 @@ body {
   color: var(--accent);
   font-size: 1.1rem;
   margin: 6px 0;
+}
+
+/* =========================================================
+   VIBRANT MULTI-COLOR DESIGN SYSTEM: CARDS & ACTION PILLS
+   Unique, intentional color-coding per operational module
+   ========================================================= */
+
+/* 1. Coral / Rose Card (Threats, Incidents, Attacks, DLP Leaks) */
+.card-coral {
+  background: var(--bg-surface);
+  border: 1px solid var(--color-rose-border);
+  border-top: 3px solid var(--color-rose);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-coral:hover {
+  border-color: var(--color-rose);
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.15);
+}
+
+/* 2. Mint / Emerald Card (Privacy, DLP Sanitizer, Baseline Healthy State) */
+.card-mint {
+  background: var(--bg-surface);
+  border: 1px solid var(--color-emerald-border);
+  border-top: 3px solid var(--color-emerald);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-mint:hover {
+  border-color: var(--color-emerald);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.15);
+}
+
+/* 3. Sky / Cyan Card (Network Telemetry Radar, Latency Metrics, APIs) */
+.card-sky {
+  background: var(--bg-surface);
+  border: 1px solid var(--color-sky-border);
+  border-top: 3px solid var(--color-sky);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-sky:hover {
+  border-color: var(--color-sky);
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.15);
+}
+
+/* 4. Radiant Amber Card (Edge RAM Buffer, Outage Mode, Degraded Warning) */
+.card-amber {
+  background: var(--bg-surface);
+  border: 1px solid var(--color-amber-border);
+  border-top: 3px solid var(--color-amber);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-amber:hover {
+  border-color: var(--color-amber);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.15);
+}
+
+/* 5. Cyber Violet Card (AIOps Autonomous Reasoning, Correlation Flow) */
+.card-violet {
+  background: var(--bg-surface);
+  border: 1px solid var(--color-violet-border);
+  border-top: 3px solid var(--color-violet);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-violet:hover {
+  border-color: var(--color-violet);
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.15);
+}
+
+/* 6. Royal Indigo Card (Multi-Tenant Relational Isolation & Identity) */
+.card-indigo {
+  background: var(--bg-surface);
+  border: 1px solid var(--color-indigo-border);
+  border-top: 3px solid var(--color-indigo);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-indigo:hover {
+  border-color: var(--color-indigo);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.15);
+}
+
+/* 7. Imperial Gold Card (Central SaaS Engine - Host Privileged Console) */
+.card-host, .card-gold {
+  background: var(--bg-surface);
+  border: 1px solid var(--color-gold-border);
+  border-top: 3px solid var(--color-gold);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(234, 179, 8, 0.12);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-host:hover, .card-gold:hover {
+  border-color: var(--color-gold);
+  box-shadow: 0 6px 20px rgba(234, 179, 8, 0.2);
+}
+
+/* Fire-Drill Simulation Action Pills (Distinct Vibrant Colors) */
+.btn-pill-coral {
+  background: var(--color-rose-subtle);
+  border: 1px solid var(--color-rose-border);
+  color: var(--color-rose);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 13px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+.btn-pill-coral:hover {
+  background: var(--color-rose);
+  color: #ffffff;
+  border-color: var(--color-rose);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(244, 63, 94, 0.35);
+}
+
+.btn-pill-amber {
+  background: var(--color-amber-subtle);
+  border: 1px solid var(--color-amber-border);
+  color: var(--color-amber);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 13px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+.btn-pill-amber:hover {
+  background: var(--color-amber);
+  color: #ffffff;
+  border-color: var(--color-amber);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.35);
+}
+
+.btn-pill-sky {
+  background: var(--color-sky-subtle);
+  border: 1px solid var(--color-sky-border);
+  color: var(--color-sky);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 13px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+.btn-pill-sky:hover {
+  background: var(--color-sky);
+  color: #ffffff;
+  border-color: var(--color-sky);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(14, 165, 233, 0.35);
+}
+
+.btn-pill-violet {
+  background: var(--color-violet-subtle);
+  border: 1px solid var(--color-violet-border);
+  color: var(--color-violet);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 13px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+.btn-pill-violet:hover {
+  background: var(--color-violet);
+  color: #ffffff;
+  border-color: var(--color-violet);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(139, 92, 246, 0.35);
+}
+
+.btn-pill-mint {
+  background: var(--color-emerald-subtle);
+  border: 1px solid var(--color-emerald-border);
+  color: var(--color-emerald);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 13px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+.btn-pill-mint:hover {
+  background: var(--color-emerald);
+  color: #ffffff;
+  border-color: var(--color-emerald);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.35);
+}
+
+.btn-pill-gold {
+  background: var(--color-gold-subtle);
+  border: 1px solid var(--color-gold-border);
+  color: var(--color-gold);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 13px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+.btn-pill-gold:hover {
+  background: var(--color-gold);
+  color: #1a1a1f;
+  border-color: var(--color-gold);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(234, 179, 8, 0.35);
 }

@@ -153,15 +153,19 @@ export function maskCredential(secret) {
 /**
  * Generates an HMAC-signed stateless session token.
  * 
- * @param {{ userId: string, tenantId: string, identifier: string }} user 
+ * @param {{ userId: string, tenantId: string, identifier: string, isHost?: boolean, role?: string }} user 
  * @param {number} [ttlMs=TOKEN_TTL_MS] 
  * @returns {string} Signed token
  */
 export function createSessionToken(user, ttlMs = TOKEN_TTL_MS) {
+  const isHost = Boolean(user.isHost || user.role === 'host' || user.tenantId === 'cicada-host' || user.identifier === 'host@cicada.io');
+  const role = user.role || (isHost ? 'host' : 'tenant');
   const payload = {
     userId: user.userId,
     tenantId: user.tenantId,
     identifier: user.identifier,
+    isHost,
+    role,
     exp: Date.now() + ttlMs,
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -175,7 +179,7 @@ export function createSessionToken(user, ttlMs = TOKEN_TTL_MS) {
  * Verifies an HMAC-signed session token.
  * 
  * @param {string} token 
- * @returns {{ userId: string, tenantId: string, identifier: string } | null}
+ * @returns {{ userId: string, tenantId: string, identifier: string, isHost: boolean, role: string } | null}
  */
 export function verifySessionToken(token) {
   if (!token || typeof token !== 'string') return null;
@@ -198,10 +202,14 @@ export function verifySessionToken(token) {
     if (typeof payload.exp !== 'number' || Date.now() > payload.exp) {
       return null; // Expired
     }
+    const isHost = Boolean(payload.isHost || payload.role === 'host' || payload.tenantId === 'cicada-host' || payload.identifier === 'host@cicada.io');
+    const role = payload.role || (isHost ? 'host' : 'tenant');
     return {
       userId: payload.userId,
       tenantId: payload.tenantId,
       identifier: payload.identifier,
+      isHost,
+      role,
     };
   } catch {
     return null;
