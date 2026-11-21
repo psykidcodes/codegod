@@ -159,7 +159,13 @@ export async function POST(request) {
       // Hash password (salt + scrypt)
       const { salt, hash } = hashPassword(password);
       const userId = `usr-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      const isHost = Boolean(body.isHost || tenantId === 'cicada-host' || normalizedId === 'host@cicada.io');
+      const isHost = Boolean(
+        body.isHost ||
+        tenantId === 'arcops-host' ||
+        tenantId === 'cicada-host' ||
+        normalizedId === 'host@arcops.io' ||
+        normalizedId === 'host@cicada.io'
+      );
       const role = body.role || (isHost ? 'host' : 'tenant');
 
       defaultDatabase.createUser({
@@ -225,7 +231,14 @@ export async function POST(request) {
         slaTarget: '99.99%',
       };
 
-      const isHost = Boolean(user.isHost || user.role === 'host' || user.tenantId === 'cicada-host' || user.identifier === 'host@cicada.io');
+      const isHost = Boolean(
+        user.isHost ||
+        user.role === 'host' ||
+        user.tenantId === 'arcops-host' ||
+        user.tenantId === 'cicada-host' ||
+        user.identifier === 'host@arcops.io' ||
+        user.identifier === 'host@cicada.io'
+      );
       const role = user.role || (isHost ? 'host' : 'tenant');
 
       const token = createSessionToken({
@@ -301,7 +314,14 @@ export async function GET(request) {
       slaTarget: '99.99%',
     };
 
-    const isHost = Boolean(session.isHost || user?.isHost || session.tenantId === 'cicada-host' || session.identifier === 'host@cicada.io');
+    const isHost = Boolean(
+      session.isHost ||
+      user?.isHost ||
+      session.tenantId === 'arcops-host' ||
+      session.tenantId === 'cicada-host' ||
+      session.identifier === 'host@arcops.io' ||
+      session.identifier === 'host@cicada.io'
+    );
     const role = session.role || user?.role || (isHost ? 'host' : 'tenant');
 
     return NextResponse.json(

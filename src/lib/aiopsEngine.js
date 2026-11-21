@@ -749,7 +749,7 @@ export function generateRecommendations(incident, rca) {
       title: `Restart edge collector agent daemon on ${source}`,
       description: `Flush local SQLite ring buffer and restart telemetry daemon process with batch recovery enabled.`,
       automatedRemediationPossible: true,
-      command: `systemctl restart cicada-telemetry-collector.service`,
+      command: `systemctl restart arcops-telemetry-collector.service`,
     });
   }
 

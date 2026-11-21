@@ -236,8 +236,27 @@ test('6. Health Condition Updating: Accurately degrades to CRITICAL during attac
   assert.ok(dataAiops.healthScore >= 85);
 });
 
-test('7. Software Host Privilege: host@cicada.io receives isHost=true while regular tenants receive isHost=false', async () => {
-  // Test Host sign in
+test('7. Software Host Privilege: host@arcops.io and host@cicada.io receive isHost=true while regular tenants receive isHost=false', async () => {
+  // Test ArcOps Host sign in
+  const reqArcOpsHost = {
+    url: 'http://localhost:3000/api/auth?action=signin',
+    json: async () => ({ identifier: 'host@arcops.io', password: 'Password123!' }),
+  };
+  const resArcOpsHost = await postAuth(reqArcOpsHost);
+  assert.equal(resArcOpsHost.status, 200);
+  const dataArcOpsHost = await resArcOpsHost.json();
+
+  assert.equal(dataArcOpsHost.status, 'authenticated');
+  assert.equal(dataArcOpsHost.user.isHost, true);
+  assert.equal(dataArcOpsHost.user.role, 'host');
+  assert.equal(dataArcOpsHost.tenant.tenantId, 'arcops-host');
+
+  // Verify ArcOps host session token
+  const arcOpsSession = verifySessionToken(dataArcOpsHost.token);
+  assert.equal(arcOpsSession.isHost, true);
+  assert.equal(arcOpsSession.role, 'host');
+
+  // Test Legacy Host sign in (compatibility)
   const reqHost = {
     url: 'http://localhost:3000/api/auth?action=signin',
     json: async () => ({ identifier: 'host@cicada.io', password: 'Password123!' }),

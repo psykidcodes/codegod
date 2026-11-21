@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Cicada // Multi-Tenant Telemetry & AIOps Platform',
-  description: 'Built-in AIOps intelligence, edge threat shield, DLP leak management, and automated root cause analysis.',
+  title: 'ArcOps // Multi-Tenant Telemetry & AIOps Platform',
+  description: 'ArcOps: Built-in AIOps intelligence, edge threat shield, DLP leak management, and automated root cause analysis.',
 };
 
 export default function RootLayout({ children }) {

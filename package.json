@@ -1,8 +1,8 @@
 {
-  "name": "antfolder",
+  "name": "arcops-telemetry",
   "version": "1.0.0",
   "private": true,
-  "description": "Production-grade Next.js App Router multi-tenant SaaS backend",
+  "description": "ArcOps: Resilient Multi-Tenant Telemetry Database & Autonomous AIOps Platform",
   "type": "module",
   "scripts": {
     "dev": "next dev",

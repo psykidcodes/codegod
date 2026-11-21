@@ -172,25 +172,33 @@ export default function HomePage() {
   const changePalette = (newPalette) => {
     setPalette(newPalette);
     document.documentElement.setAttribute('data-palette', newPalette);
-    localStorage.setItem('cicada_palette', newPalette);
+    localStorage.setItem('arcops_palette', newPalette);
   };
 
   // Initialize Theme, Palette, Simple Mode & Session on Mount
   useEffect(() => {
-    const savedTheme = typeof window !== 'undefined' ? localStorage.getItem('cicada_theme') || 'dark' : 'dark';
+    const savedTheme = typeof window !== 'undefined'
+      ? localStorage.getItem('arcops_theme') || localStorage.getItem('cicada_theme') || 'dark'
+      : 'dark';
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
 
-    const savedPalette = typeof window !== 'undefined' ? localStorage.getItem('cicada_palette') || 'cobalt' : 'cobalt';
+    const savedPalette = typeof window !== 'undefined'
+      ? localStorage.getItem('arcops_palette') || localStorage.getItem('cicada_palette') || 'cobalt'
+      : 'cobalt';
     setPalette(savedPalette);
     document.documentElement.setAttribute('data-palette', savedPalette);
 
-    const savedSimpleMode = typeof window !== 'undefined' ? localStorage.getItem('cicada_simple_mode') : null;
+    const savedSimpleMode = typeof window !== 'undefined'
+      ? localStorage.getItem('arcops_simple_mode') || localStorage.getItem('cicada_simple_mode')
+      : null;
     if (savedSimpleMode !== null) {
       setSimpleMode(savedSimpleMode === 'true');
     }
 
-    const storedToken = typeof window !== 'undefined' ? localStorage.getItem('cicada_session_token') : null;
+    const storedToken = typeof window !== 'undefined'
+      ? localStorage.getItem('arcops_session_token') || localStorage.getItem('cicada_session_token')
+      : null;
     if (storedToken) {
       fetch('/api/auth?action=me', {
         headers: { Authorization: `Bearer ${storedToken}` },
@@ -200,6 +208,7 @@ export default function HomePage() {
           if (data.authenticated && data.user) {
             setCurrentUser(data.user);
           } else {
+            localStorage.removeItem('arcops_session_token');
             localStorage.removeItem('cicada_session_token');
             setCurrentUser(null);
           }
@@ -220,14 +229,14 @@ export default function HomePage() {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(nextTheme);
     document.documentElement.setAttribute('data-theme', nextTheme);
-    localStorage.setItem('cicada_theme', nextTheme);
+    localStorage.setItem('arcops_theme', nextTheme);
   };
 
   // Simple Mode Toggle Handler
   const toggleSimpleMode = () => {
     const nextVal = !simpleMode;
     setSimpleMode(nextVal);
-    localStorage.setItem('cicada_simple_mode', String(nextVal));
+    localStorage.setItem('arcops_simple_mode', String(nextVal));
   };
 
   // Fetch Telemetry & Collector Data strictly for Authenticated Tenant
@@ -409,8 +418,8 @@ export default function HomePage() {
       let targetUser;
       if (targetTenantId === 'shield-defense') {
         targetUser = { identifier: 'secops@shield-defense.com', password: 'Password123!' };
-      } else if (targetTenantId === 'cicada-host') {
-        targetUser = { identifier: 'host@cicada.io', password: 'Password123!' };
+      } else if (targetTenantId === 'arcops-host' || targetTenantId === 'cicada-host') {
+        targetUser = { identifier: 'host@arcops.io', password: 'Password123!' };
       } else {
         targetUser = { identifier: 'admin@acme.com', password: 'Password123!' };
       }
@@ -422,6 +431,7 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (res.ok && data.status === 'authenticated') {
+        localStorage.setItem('arcops_session_token', data.token);
         localStorage.setItem('cicada_session_token', data.token);
         setCurrentUser(data.user);
         setIsolationAudit(null);
@@ -578,6 +588,7 @@ export default function HomePage() {
 
       const data = await res.json();
       if (res.ok && data.status === 'authenticated') {
+        localStorage.setItem('arcops_session_token', data.token);
         localStorage.setItem('cicada_session_token', data.token);
         setCurrentUser(data.user);
         setActionMessage({
@@ -659,6 +670,7 @@ export default function HomePage() {
 
   // Sign Out Handler
   const handleSignOut = () => {
+    localStorage.removeItem('arcops_session_token');
     localStorage.removeItem('cicada_session_token');
     setCurrentUser(null);
     setAuthPassword('');
@@ -799,7 +811,7 @@ export default function HomePage() {
             ⚡
           </div>
           <h1 style={{ fontSize: '1.35rem', fontWeight: '700', letterSpacing: '-0.3px' }}>
-            Cicada Telemetry & AIOps
+            ArcOps Telemetry & AIOps
           </h1>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
             Multi-Tenant Observability, Privacy Collector & Automated Attack Defense
@@ -959,7 +971,7 @@ export default function HomePage() {
           {authMode === 'signup' && (
             <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ background: 'var(--accent-subtle)', border: '1px solid var(--border-accent)', borderRadius: '6px', padding: '8px 12px', fontSize: '0.74rem' }}>
-                <strong>👋 New to Cicada?</strong> Registering provisions a private, row-level isolated partition. Your team gets dedicated anomaly baselines and zero-knowledge privacy.
+                <strong>👋 New to ArcOps?</strong> Registering provisions a private, row-level isolated partition. Your team gets dedicated anomaly baselines and zero-knowledge privacy.
               </div>
 
               <div>
@@ -1158,7 +1170,7 @@ export default function HomePage() {
                 type="button"
                 onClick={() => {
                   setAuthMode('signin');
-                  setAuthIdentifier('host@cicada.io');
+                  setAuthIdentifier('host@arcops.io');
                   setAuthPassword('Password123!');
                   setAuthError(null);
                   setAuthSuccess(null);
@@ -1167,7 +1179,7 @@ export default function HomePage() {
                 style={{ fontSize: '0.73rem', justifyContent: 'flex-start', borderRadius: '6px' }}
                 title="Sign in as Platform Host: Unlocks Central SaaS Engine (Tier 2)"
               >
-                <span>👑</span> <strong>Software Host:</strong> host@cicada.io / Password123! [Central SaaS Engine Host]
+                <span>👑</span> <strong>Software Host:</strong> host@arcops.io / Password123! [Central SaaS Engine Host]
               </button>
               <button
                 type="button"
@@ -1259,7 +1271,7 @@ export default function HomePage() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '1.05rem', fontWeight: '700', letterSpacing: '-0.2px' }}>
-                Cicada Telemetry
+                ArcOps Telemetry
               </span>
               <span className="badge-minimal" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
                 prod / us-east-1
@@ -1372,7 +1384,7 @@ export default function HomePage() {
                   ⇄ Switch to {currentUser.tenantId === 'acme-corp' ? 'shield-defense' : 'acme-corp'}
                 </button>
                 <button
-                  onClick={() => handleSwitchDemoTenant('cicada-host')}
+                  onClick={() => handleSwitchDemoTenant('arcops-host')}
                   className="btn-pill-gold"
                   style={{ padding: '2px 8px', fontSize: '0.68rem', marginLeft: '2px' }}
                   title="Switch to Software Host account (Reveals Central SaaS Engine)"
@@ -2637,7 +2649,7 @@ export default function HomePage() {
           </h3>
           {simpleMode && (
             <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-              💡 <strong>In Plain English:</strong> A cheat sheet for developers who want to connect other apps or scripts directly to Cicada using standard web requests.
+              💡 <strong>In Plain English:</strong> A cheat sheet for developers who want to connect other apps or scripts directly to ArcOps using standard web requests.
             </p>
           )}
 
@@ -2692,7 +2704,7 @@ export default function HomePage() {
         color: 'var(--text-muted)',
         gap: '10px',
       }}>
-        <div>Cicada Telemetry & AIOps Platform · Enterprise Multi-Tenant Observability</div>
+        <div>ArcOps Telemetry & AIOps Platform · Enterprise Multi-Tenant Observability</div>
         <div>Tier 1 Edge Collector & Tier 2 SaaS Engine Decoupled · Row-Level Partition Isolation Enforced</div>
       </footer>
     </div>

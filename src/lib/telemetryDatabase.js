@@ -230,8 +230,16 @@ export class TelemetryDatabase {
         status: 'active',
       },
       {
+        tenantId: 'arcops-host',
+        name: 'ArcOps Core SaaS Cloud Platform',
+        tier: 'host',
+        region: 'us-east-1',
+        slaTarget: '99.9999%',
+        status: 'active',
+      },
+      {
         tenantId: 'cicada-host',
-        name: 'Cicada Core SaaS Cloud Platform',
+        name: 'ArcOps Legacy SaaS Host Platform',
         tier: 'host',
         region: 'us-east-1',
         slaTarget: '99.9999%',
@@ -332,30 +340,43 @@ export class TelemetryDatabase {
         });
       }
 
-      // Seed host platform account: cicada-host
-      const hostAccount = {
-        userId: 'usr-cicada-host',
-        tenantId: 'cicada-host',
-        identifier: 'host@cicada.io',
-        identifierType: 'email',
-        password: 'Password123!',
-        isHost: 1,
-        role: 'host',
-      };
-
-      const existingHost = this.getUserByIdentifier(hostAccount.identifier);
-      if (!existingHost) {
-        const { salt, hash } = hashPassword(hostAccount.password);
-        this.createUser({
-          userId: hostAccount.userId,
-          tenantId: hostAccount.tenantId,
-          identifier: hostAccount.identifier,
-          identifierType: hostAccount.identifierType,
-          passwordHash: hash,
-          salt,
+      // Seed host platform accounts: arcops-host (primary) & cicada-host (compatibility)
+      const hostAccounts = [
+        {
+          userId: 'usr-arcops-host',
+          tenantId: 'arcops-host',
+          identifier: 'host@arcops.io',
+          identifierType: 'email',
+          password: 'Password123!',
           isHost: 1,
           role: 'host',
-        });
+        },
+        {
+          userId: 'usr-cicada-host',
+          tenantId: 'cicada-host',
+          identifier: 'host@cicada.io',
+          identifierType: 'email',
+          password: 'Password123!',
+          isHost: 1,
+          role: 'host',
+        },
+      ];
+
+      for (const hostAccount of hostAccounts) {
+        const existingHost = this.getUserByIdentifier(hostAccount.identifier);
+        if (!existingHost) {
+          const { salt, hash } = hashPassword(hostAccount.password);
+          this.createUser({
+            userId: hostAccount.userId,
+            tenantId: hostAccount.tenantId,
+            identifier: hostAccount.identifier,
+            identifierType: hostAccount.identifierType,
+            passwordHash: hash,
+            salt,
+            isHost: 1,
+            role: 'host',
+          });
+        }
       }
     } catch {
       // Ignore if already seeded
@@ -417,7 +438,14 @@ export class TelemetryDatabase {
       identifierType: row.identifier_type,
       passwordHash: row.password_hash,
       salt: row.salt,
-      isHost: Boolean(row.is_host || row.tenant_id === 'cicada-host' || row.identifier === 'host@cicada.io'),
+      isHost: Boolean(
+        row.is_host ||
+        row.tenant_id === 'arcops-host' ||
+        row.tenant_id === 'cicada-host' ||
+        row.identifier === 'host@arcops.io' ||
+        row.identifier === 'host@cicada.io' ||
+        row.role === 'host'
+      ),
       role: row.role || (row.is_host ? 'host' : 'tenant'),
       createdAtUtc: row.created_at_utc,
     };
@@ -440,7 +468,14 @@ export class TelemetryDatabase {
       identifierType: row.identifier_type,
       passwordHash: row.password_hash,
       salt: row.salt,
-      isHost: Boolean(row.is_host || row.tenant_id === 'cicada-host' || row.identifier === 'host@cicada.io'),
+      isHost: Boolean(
+        row.is_host ||
+        row.tenant_id === 'arcops-host' ||
+        row.tenant_id === 'cicada-host' ||
+        row.identifier === 'host@arcops.io' ||
+        row.identifier === 'host@cicada.io' ||
+        row.role === 'host'
+      ),
       role: row.role || (row.is_host ? 'host' : 'tenant'),
       createdAtUtc: row.created_at_utc,
     };

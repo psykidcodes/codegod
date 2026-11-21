@@ -158,7 +158,14 @@ export function maskCredential(secret) {
  * @returns {string} Signed token
  */
 export function createSessionToken(user, ttlMs = TOKEN_TTL_MS) {
-  const isHost = Boolean(user.isHost || user.role === 'host' || user.tenantId === 'cicada-host' || user.identifier === 'host@cicada.io');
+  const isHost = Boolean(
+    user.isHost ||
+    user.role === 'host' ||
+    user.tenantId === 'arcops-host' ||
+    user.tenantId === 'cicada-host' ||
+    user.identifier === 'host@arcops.io' ||
+    user.identifier === 'host@cicada.io'
+  );
   const role = user.role || (isHost ? 'host' : 'tenant');
   const payload = {
     userId: user.userId,
@@ -202,7 +209,14 @@ export function verifySessionToken(token) {
     if (typeof payload.exp !== 'number' || Date.now() > payload.exp) {
       return null; // Expired
     }
-    const isHost = Boolean(payload.isHost || payload.role === 'host' || payload.tenantId === 'cicada-host' || payload.identifier === 'host@cicada.io');
+    const isHost = Boolean(
+      payload.isHost ||
+      payload.role === 'host' ||
+      payload.tenantId === 'arcops-host' ||
+      payload.tenantId === 'cicada-host' ||
+      payload.identifier === 'host@arcops.io' ||
+      payload.identifier === 'host@cicada.io'
+    );
     const role = payload.role || (isHost ? 'host' : 'tenant');
     return {
       userId: payload.userId,
