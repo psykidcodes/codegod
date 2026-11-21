@@ -3,6 +3,8 @@ import { defaultDatabase } from '../../../lib/telemetryDatabase.js';
 import { getOrCreateTenantPartition } from '../../../lib/saasEngine.js';
 import { analyzeTenantOps } from '../../../lib/aiopsEngine.js';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/tenants
  * Lists all dynamic registered tenants in the platform enriched with live operational health

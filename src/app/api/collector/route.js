@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server.js';
 import { defaultCollector } from '../../../lib/localCollector.js';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Helper to extract client IP address from standard request headers.
  */

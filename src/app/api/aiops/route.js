@@ -3,6 +3,8 @@ import { TenantIsolationError, tenantStore } from '../../../lib/saasEngine.js';
 import { analyzeTenantOps } from '../../../lib/aiopsEngine.js';
 import { defaultDatabase } from '../../../lib/telemetryDatabase.js';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/aiops
  * AIOps intelligence endpoint delivering real-time health score, anomaly detection,

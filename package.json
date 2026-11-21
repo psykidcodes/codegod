@@ -4,6 +4,9 @@
   "private": true,
   "description": "ArcOps: Resilient Multi-Tenant Telemetry Database & Autonomous AIOps Platform",
   "type": "module",
+  "engines": {
+    "node": ">=22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

@@ -14,6 +14,8 @@ import {
   verifyResetCode,
 } from '../../../lib/auth.js';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/auth
  * Handles tenant user Sign Up, Sign In, and Forgot Password Authenticator.

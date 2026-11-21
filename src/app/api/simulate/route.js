@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server.js';
 import { defaultDatabase, SCENARIO_TYPES } from '../../../lib/telemetryDatabase.js';
 import { analyzeTenantOps } from '../../../lib/aiopsEngine.js';
 
+export const dynamic = 'force-dynamic';
+
 const VALID_SCENARIOS = new Set([
   SCENARIO_TYPES.SPIKES,
   SCENARIO_TYPES.OUTAGES,

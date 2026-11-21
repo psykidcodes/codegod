@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server.js';
 import { ingestSingle, ingestBatch } from '../../../lib/saasEngine.js';
 
+export const dynamic = 'force-dynamic';
+
 const AUTHORIZED_COLLECTOR_TOKENS = new Set([
   'collector-alpha-token',
   'collector-beta-token',

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server.js';
 import { queryTenant, TenantIsolationError } from '../../../lib/saasEngine.js';
 import { analyzeTenantOps } from '../../../lib/aiopsEngine.js';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/telemetry
  * Telemetry query endpoint enforcing strict tenant isolation with optional region,

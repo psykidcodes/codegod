@@ -32,17 +32,28 @@ export const SCENARIO_TYPES = Object.freeze({
  */
 export class TelemetryDatabase {
   constructor(dbPath = ':memory:') {
-    this.dbPath = dbPath;
+    let targetPath = dbPath;
 
-    if (dbPath !== ':memory:') {
+    // Vercel serverless environment: ensure in-memory database to prevent EROFS on read-only serverless filesystem
+    if (process.env.VERCEL && targetPath !== ':memory:' && !targetPath.startsWith('/tmp')) {
+      targetPath = ':memory:';
+    }
+
+    if (targetPath !== ':memory:') {
       try {
-        mkdirSync(dirname(dbPath), { recursive: true });
+        mkdirSync(dirname(targetPath), { recursive: true });
       } catch {
-        // Directory already exists or path is local
+        targetPath = ':memory:';
       }
     }
 
-    this.db = new DatabaseSync(dbPath);
+    this.dbPath = targetPath;
+    try {
+      this.db = new DatabaseSync(targetPath);
+    } catch {
+      this.dbPath = ':memory:';
+      this.db = new DatabaseSync(':memory:');
+    }
     this.initSchema();
   }
 

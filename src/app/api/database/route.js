@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server.js';
 import { defaultDatabase } from '../../../lib/telemetryDatabase.js';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/database
  * Multi-tenant telemetry database query endpoint.
