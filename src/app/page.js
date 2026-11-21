@@ -139,15 +139,15 @@ export default function HomePage() {
   const [playgroundResult, setPlaygroundResult] = useState(null);
   const [playgroundRunning, setPlaygroundRunning] = useState(false);
 
-  // 5 Selectable Color Palettes: 'cobalt' | 'emerald' | 'violet' | 'amber' | 'crimson'
-  const [palette, setPalette] = useState('cobalt');
+  // 5 Selectable Color Palettes: 'zinc' | 'cobalt' | 'emerald' | 'violet' | 'amber'
+  const [palette, setPalette] = useState('zinc');
 
   const PALETTES = [
-    { id: 'cobalt', label: 'Cobalt', hex: '#3b82f6', subtitle: 'Enterprise Blue' },
-    { id: 'emerald', label: 'Emerald', hex: '#10b981', subtitle: 'Cyber Mint' },
-    { id: 'violet', label: 'Violet', hex: '#8b5cf6', subtitle: 'Threat Intel' },
-    { id: 'amber', label: 'Amber', hex: '#f59e0b', subtitle: 'Observability' },
-    { id: 'crimson', label: 'Crimson', hex: '#f43f5e', subtitle: 'SOC Red Alert' },
+    { id: 'zinc', label: 'Zinc', hex: '#e4e4e7', subtitle: 'Monochrome Minimalist' },
+    { id: 'cobalt', label: 'Cobalt', hex: '#38bdf8', subtitle: 'Subtle Slate Blue' },
+    { id: 'emerald', label: 'Emerald', hex: '#34d399', subtitle: 'Soft Mint Sage' },
+    { id: 'violet', label: 'Iris', hex: '#a78bfa', subtitle: 'Muted Lavender' },
+    { id: 'amber', label: 'Amber', hex: '#fbbf24', subtitle: 'Warm Bronze' },
   ];
 
   // Local Buffering & Outage Resilience State
@@ -184,8 +184,8 @@ export default function HomePage() {
     document.documentElement.setAttribute('data-theme', savedTheme);
 
     const savedPalette = typeof window !== 'undefined'
-      ? localStorage.getItem('arcops_palette') || localStorage.getItem('cicada_palette') || 'cobalt'
-      : 'cobalt';
+      ? localStorage.getItem('arcops_palette') || localStorage.getItem('cicada_palette') || 'zinc'
+      : 'zinc';
     setPalette(savedPalette);
     document.documentElement.setAttribute('data-palette', savedPalette);
 
@@ -757,29 +757,29 @@ export default function HomePage() {
       }}>
         {/* Top Header Options */}
         <div style={{ position: 'absolute', top: '24px', right: '24px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'var(--bg-surface)', padding: '3px 6px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '3px' }}>Palette:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'var(--bg-surface)', padding: '2px 6px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '2px' }}>Theme:</span>
             {PALETTES.map((p) => (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => changePalette(p.id)}
                 className={`palette-swatch-btn ${palette === p.id ? 'active' : ''}`}
-                title={`${p.label} Palette - ${p.subtitle}`}
+                title={`${p.label} - ${p.subtitle}`}
                 style={{
-                  padding: '3px 7px',
+                  padding: '2px 7px',
                   fontSize: '0.72rem',
                   borderRadius: '4px',
-                  border: palette === p.id ? `1px solid ${p.hex}` : '1px solid transparent',
-                  background: palette === p.id ? `${p.hex}20` : 'transparent',
-                  color: palette === p.id ? p.hex : 'var(--text-secondary)',
+                  border: palette === p.id ? '1px solid var(--border-strong)' : '1px solid transparent',
+                  background: palette === p.id ? 'var(--bg-surface-elevated)' : 'transparent',
+                  color: palette === p.id ? 'var(--text-primary)' : 'var(--text-secondary)',
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '4px',
                 }}
               >
-                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: p.hex }} />
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: p.hex }} />
                 <span>{p.label}</span>
               </button>
             ))}
@@ -1283,8 +1283,8 @@ export default function HomePage() {
         {/* Status, Palette, Tenant Switcher, Simple Mode, Theme & Sign Out Controls */}
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           {/* Palette Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'var(--bg-surface)', padding: '3px 6px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '3px' }}>Palette:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'var(--bg-surface)', padding: '2px 6px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginRight: '2px' }}>Theme:</span>
             {PALETTES.map((p) => (
               <button
                 key={p.id}
@@ -1293,19 +1293,19 @@ export default function HomePage() {
                 className={`palette-swatch-btn ${palette === p.id ? 'active' : ''}`}
                 title={`${p.label} - ${p.subtitle}`}
                 style={{
-                  padding: '3px 7px',
+                  padding: '2px 7px',
                   fontSize: '0.72rem',
                   borderRadius: '4px',
-                  border: palette === p.id ? `1px solid ${p.hex}` : '1px solid transparent',
-                  background: palette === p.id ? `${p.hex}20` : 'transparent',
-                  color: palette === p.id ? p.hex : 'var(--text-secondary)',
+                  border: palette === p.id ? '1px solid var(--border-strong)' : '1px solid transparent',
+                  background: palette === p.id ? 'var(--bg-surface-elevated)' : 'transparent',
+                  color: palette === p.id ? 'var(--text-primary)' : 'var(--text-secondary)',
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '4px',
                 }}
               >
-                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: p.hex }} />
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: p.hex }} />
                 <span>{p.label}</span>
               </button>
             ))}
@@ -1676,7 +1676,7 @@ export default function HomePage() {
           {/* Domain Health Radar - Sky Blue Card */}
           <div className="card-sky" style={{ padding: '18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--color-sky)' }}>
+              <h3 style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--text-primary)' }}>
                 Operational Domain Status
               </h3>
             </div>
@@ -1713,7 +1713,7 @@ export default function HomePage() {
 
           {/* Anomaly Detection Radar - Cyber Violet Card */}
           <div className="card-violet" style={{ padding: '18px' }}>
-            <h3 style={{ fontSize: '0.88rem', fontWeight: '600', marginBottom: '8px', color: 'var(--color-violet)' }}>
+            <h3 style={{ fontSize: '0.88rem', fontWeight: '600', marginBottom: '8px', color: 'var(--text-primary)' }}>
               Statistical Outlier Detection (Z ≥ 2.0)
             </h3>
             {simpleMode && (
@@ -1860,7 +1860,7 @@ export default function HomePage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.05rem' }}>🔀</span>
-                <h3 style={{ fontSize: '0.92rem', fontWeight: '600', color: 'var(--color-violet)' }}>
+                <h3 style={{ fontSize: '0.92rem', fontWeight: '600', color: 'var(--text-primary)' }}>
                   AIOps Correlation Engine: Alert Storm Deduplication &amp; Consolidation
                 </h3>
               </div>
@@ -2066,7 +2066,7 @@ export default function HomePage() {
           <div className="card-mint" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--color-emerald)' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-primary)' }}>
                   Edge Local Collector Agent (Client Perimeter Tier)
                 </h3>
               </div>
@@ -2145,7 +2145,7 @@ export default function HomePage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.1rem' }}>🔄</span>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--color-amber)' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-primary)' }}>
                   Resilient Edge Local Buffering &amp; Outage Replay Engine
                 </h3>
               </div>
@@ -2269,7 +2269,7 @@ export default function HomePage() {
           </div>
 
           <div className="card-host" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '4px', color: 'var(--color-gold)' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '4px', color: 'var(--text-primary)' }}>
               Central Multi-Tenant SaaS Engine (Cloud Platform Tier)
             </h3>
             {simpleMode && (
@@ -2402,7 +2402,7 @@ export default function HomePage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '1.1rem' }}>🏢</span>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--color-indigo)' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-primary)' }}>
                   Two-Tenant Separation Showcase (Row-Level Security)
                 </h3>
               </div>
@@ -2540,7 +2540,7 @@ export default function HomePage() {
         <div className="card-sky" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
             <div>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--color-sky)' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-primary)' }}>
                 Collector Playground (Automated Verification)
               </h3>
             </div>
@@ -2644,7 +2644,7 @@ export default function HomePage() {
       {/* TAB 5: Endpoints & Architecture - Royal Indigo Card */}
       {activeTab === 'api' && (
         <div className="card-indigo" style={{ padding: '20px' }}>
-          <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '6px', color: 'var(--color-indigo)' }}>
+          <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '6px', color: 'var(--text-primary)' }}>
             System Architecture & REST Endpoints
           </h3>
           {simpleMode && (
