@@ -531,12 +531,14 @@ export default function HomePage() {
           response: collectorData,
         });
 
-        // 3. Automatically switch to the Playground tab to demonstrate raw vs sanitized metadata
-        setActiveTab('playground');
-
+        // 3. Keep current view on Overview or AIOps so user observes health radar/score change immediately,
+        // while populating Playground state in background. If in Playground, stay in Playground.
         setActionMessage({
           type: data.aiopsReport?.healthStatus === 'HEALTHY' ? 'success' : 'warning',
-          text: `[WORKFLOW COMPLETED] Scenario '${scenario}' simulated. Health status updated to ${data.aiopsReport?.healthStatus || 'UPDATED'}. Collector Playground automated below with live raw input vs sanitized metadata.`,
+          text: `[SIMULATION] Scenario '${scenario}' active. Health condition: ${data.aiopsReport?.healthStatus || 'UPDATED'} (${data.aiopsReport?.healthScore || 0}/100). Collector Playground loaded with live sanitized telemetry.`,
+          actionButton: activeTab === 'playground'
+            ? { label: '📊 View Health Radar →', tab: 'overview' }
+            : { label: '🧪 Inspect in Playground →', tab: 'playground' },
         });
 
         // Refresh all background counts
@@ -1298,18 +1300,24 @@ export default function HomePage() {
           </div>
 
           {/* Status Pill */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: 'var(--bg-surface)',
-            border: `1px solid ${getStatusColor(aiopsData.healthStatus)}40`,
-            borderRadius: '20px',
-            padding: '4px 10px',
-            fontSize: '0.76rem',
-            fontWeight: '600',
-            color: getStatusColor(aiopsData.healthStatus),
-          }}>
+          <div
+            onClick={() => setActiveTab('overview')}
+            title="Click to view System Health Radar"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'var(--bg-surface)',
+              border: `1px solid ${getStatusColor(aiopsData.healthStatus)}40`,
+              borderRadius: '20px',
+              padding: '4px 10px',
+              fontSize: '0.76rem',
+              fontWeight: '600',
+              color: getStatusColor(aiopsData.healthStatus),
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
             <span
               className={aiopsData.healthStatus !== 'HEALTHY' ? 'status-dot-active' : ''}
               style={{
@@ -1494,9 +1502,24 @@ export default function HomePage() {
         marginBottom: '16px',
       }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)' }}>
               SIMULATE OPERATIONAL EVENTS:
+            </span>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '2px 8px',
+              borderRadius: '12px',
+              fontSize: '0.72rem',
+              fontWeight: '700',
+              background: aiopsData.healthStatus === 'CRITICAL' ? 'rgba(244, 63, 94, 0.15)' : aiopsData.healthStatus === 'DEGRADED' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+              color: getStatusColor(aiopsData.healthStatus),
+              border: `1px solid ${getStatusColor(aiopsData.healthStatus)}50`,
+            }}>
+              <span className={aiopsData.healthStatus !== 'HEALTHY' ? 'status-dot-active' : ''} style={{ width: '6px', height: '6px', borderRadius: '50%', background: getStatusColor(aiopsData.healthStatus) }} />
+              {aiopsData.healthStatus} ({aiopsData.healthScore}/100)
             </span>
           </div>
 
@@ -1569,7 +1592,29 @@ export default function HomePage() {
           border: `1px solid ${actionMessage.type === 'error' ? 'rgba(244, 63, 94, 0.3)' : actionMessage.type === 'warning' ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-accent)'}`,
           color: actionMessage.type === 'error' ? 'var(--color-rose)' : actionMessage.type === 'warning' ? 'var(--color-amber)' : 'var(--text-primary)',
         }}>
-          <span>{actionMessage.text}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <span>{actionMessage.text}</span>
+            {actionMessage.actionButton && (
+              <button
+                onClick={() => setActiveTab(actionMessage.actionButton.tab)}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid currentColor',
+                  color: 'inherit',
+                  padding: '3px 9px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.74rem',
+                  fontWeight: '600',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                {actionMessage.actionButton.label}
+              </button>
+            )}
+          </div>
           <button onClick={() => setActionMessage(null)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '0.85rem' }}>✕</button>
         </div>
       )}

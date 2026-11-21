@@ -16,7 +16,7 @@ import {
   generateRecommendations,
 } from './aiopsEngine.js';
 import { hashPassword } from './auth.js';
-import { ingestBatch, tenantStore } from './saasEngine.js';
+import { ingestBatch, tenantStore, getOrCreateTenantPartition } from './saasEngine.js';
 import { defaultCollector, ATTACK_TYPES, LEAK_TYPES } from './localCollector.js';
 
 export const SCENARIO_TYPES = Object.freeze({
@@ -849,7 +849,7 @@ export class TelemetryDatabase {
     const generatedEvents = [];
 
     // Reset in-memory partition before applying simulation scenario so state updates cleanly
-    const prePartition = tenantStore.get(normalizedTenant);
+    const prePartition = getOrCreateTenantPartition(normalizedTenant);
     if (prePartition) {
       prePartition.events = [];
       prePartition.seenPayloadIds = new Set();
@@ -948,6 +948,10 @@ export class TelemetryDatabase {
         metrics: { queueSaturation: 98, droppedEventsCount: 450 },
         summary: 'Telemetry pipeline backpressure: local buffer overflow under outage',
       });
+
+      if (defaultCollector && typeof defaultCollector.setOutageMode === 'function') {
+        defaultCollector.setOutageMode(true);
+      }
     } else if (scenarioType === SCENARIO_TYPES.FAILED_LOGINS) {
       // Distributed credential stuffing brute-force attack + malicious injection attempt
       generatedEvents.push({
@@ -1097,17 +1101,23 @@ export class TelemetryDatabase {
           (defaultCollector.stats.leakBreakdown[LEAK_TYPES.SSN] || 0) + 1;
       }
     } else if (scenarioType === SCENARIO_TYPES.BASELINE) {
-      // 1. Purge past critical and high severity attack/incident events for this tenant so health restores to 100% HEALTHY
+      // 1. Purge past non-low severity attack/incident events for this tenant so health restores to 100% HEALTHY
       this.db.prepare(`
         DELETE FROM telemetry_events 
-        WHERE tenant_id = ? AND severity IN ('critical', 'high')
+        WHERE tenant_id = ? AND severity != 'low'
       `).run(normalizedTenant);
 
-      // 2. Clear past anomalies and mark past incidents as RESOLVED
+      // 2. Clear past anomalies and mark past incidents and attacks as RESOLVED
       this.db.prepare('DELETE FROM anomalies WHERE tenant_id = ?').run(normalizedTenant);
       this.db.prepare("UPDATE incidents SET status = 'RESOLVED' WHERE tenant_id = ?").run(normalizedTenant);
+      this.db.prepare("UPDATE security_attacks SET mitigation_status = 'RESOLVED_NEUTRALIZED' WHERE tenant_id = ?").run(normalizedTenant);
 
-      // 3. Normal healthy baseline operational traffic
+      // 3. Clear simulated outage mode in edge collector
+      if (defaultCollector && typeof defaultCollector.setOutageMode === 'function') {
+        defaultCollector.setOutageMode(false);
+      }
+
+      // 4. Normal healthy baseline operational traffic
       for (let i = 0; i < 6; i++) {
         generatedEvents.push({
           payloadId: `${simulationId}-baseline-${i}`,
@@ -1136,7 +1146,7 @@ export class TelemetryDatabase {
     }
 
     // Ensure partition lastSeenUtc is updated to now so staleness penalty is not triggered
-    const postPartition = tenantStore.get(normalizedTenant);
+    const postPartition = getOrCreateTenantPartition(normalizedTenant);
     if (postPartition) {
       postPartition.stats.lastSeenUtc = new Date().toISOString();
     }
